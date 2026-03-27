@@ -128,6 +128,7 @@ int main(void)
 
     GlobalState globalState;
     World world;
+    bool isPlayerMoving = false;
 
 #pragma region Initialization
     {
@@ -214,8 +215,165 @@ int main(void)
 
 #pragma endregion
 
+        int walkButtonWidth = 200;
+        int buttonOffset = 20;
+        int buttonYOff = globalState.screenHeight - walkButtonWidth - buttonOffset * 2;
+        Color buttonUnpressedColor = GRAY;
+        Color buttonPressedColor = BLACK;
+        Color currentColor = buttonUnpressedColor;
+        int cameraButtonWidth = 180;
+
+        Vector2 leftBtnCenter = (Vector2){walkButtonWidth / 2 + buttonOffset, buttonYOff + walkButtonWidth / 2 + buttonOffset};
+        float moveAngleBy = 0;
+        if (IsKeyDown(KEY_LEFT) ||
+            (CheckCollisionPointCircle(GetMousePosition(), leftBtnCenter, walkButtonWidth / 2) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)))
+        {
+            moveAngleBy = 0.0005f;
+            currentColor = buttonPressedColor;
+        }
+        else
+        {
+            currentColor = buttonUnpressedColor;
+        }
+        DrawRing(
+            leftBtnCenter,
+            walkButtonWidth / 2 - 5, walkButtonWidth / 2, 0, 360, 36, currentColor);
+        DrawPoly(leftBtnCenter, 3, walkButtonWidth / 2 - 40, 180, currentColor);
+
+        Vector2 rightBtnCenter = (Vector2){globalState.screenWidth - walkButtonWidth / 2 - buttonOffset, buttonYOff + walkButtonWidth / 2 + buttonOffset};
+        if (IsKeyDown(KEY_RIGHT) ||
+            (CheckCollisionPointCircle(GetMousePosition(), rightBtnCenter, walkButtonWidth / 2) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)))
+        {
+            moveAngleBy = -0.0005f;
+            currentColor = buttonPressedColor;
+        }
+        else
+        {
+            currentColor = buttonUnpressedColor;
+        }
+        DrawRing(
+            rightBtnCenter,
+            walkButtonWidth / 2 - 5, walkButtonWidth / 2, 0, 360, 36, currentColor);
+        DrawPoly(rightBtnCenter, 3, walkButtonWidth / 2 - 40, 0, currentColor);
+
+        world.player.atAngle += moveAngleBy;
+        isPlayerMoving = moveAngleBy != 0;
+
+        if (!isPlayerMoving)
+        {
+            Vector2 lUpTopLeft = (Vector2){
+                leftBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * -60),
+                leftBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * -60)};
+            Vector2 lUpBtmLeft = (Vector2){
+                leftBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * -5),
+                leftBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * -5)};
+            Vector2 lUpBtmRight = (Vector2){
+                leftBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * -5) + cameraButtonWidth,
+                leftBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * -5)};
+            Vector2 lUpTopRight = (Vector2){
+                leftBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * -5) + cameraButtonWidth,
+                leftBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * -60)};
+
+            DrawRing((Vector2){leftBtnCenter.x, leftBtnCenter.y}, walkButtonWidth / 2 + 8, walkButtonWidth / 2 + 13, -60, -5, 12, GRAY);
+            DrawLineEx(lUpBtmLeft, lUpBtmRight, 5, GRAY);
+            DrawLineEx(lUpBtmRight, lUpTopRight, 5, GRAY);
+            DrawLineEx(lUpTopRight, lUpTopLeft, 5, GRAY);
+
+            Vector2 lUpCenter = Vector2Scale(Vector2Add(lUpBtmLeft, lUpTopRight), 0.5f);
+            DrawPoly(lUpCenter, 3, 30, -90, currentColor);
+            Vector2 lUpPoints[4] = {lUpBtmLeft, lUpBtmRight, lUpTopRight, lUpTopLeft};
+
+            Vector2 lDownTopLeft = (Vector2){
+                leftBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * 60),
+                leftBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * 60)};
+            Vector2 lDownBtmLeft = (Vector2){
+                leftBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * 5),
+                leftBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * 5)};
+            Vector2 lDownBtmRight = (Vector2){
+                leftBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * 5) + cameraButtonWidth,
+                leftBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * 5)};
+            Vector2 lDownTopRight = (Vector2){
+                leftBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * 5) + cameraButtonWidth,
+                leftBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * 60)};
+
+            DrawRing((Vector2){leftBtnCenter.x, leftBtnCenter.y}, walkButtonWidth / 2 + 8, walkButtonWidth / 2 + 13, 5, 60, 12, GRAY);
+            DrawLineEx(lDownBtmLeft, lDownBtmRight, 5, GRAY);
+            DrawLineEx(lDownBtmRight, lDownTopRight, 5, GRAY);
+            DrawLineEx(lDownTopRight, lDownTopLeft, 5, GRAY);
+            Vector2 lDownCenter = Vector2Scale(Vector2Add(lDownBtmLeft, lDownTopRight), 0.5f);
+            DrawPoly(lDownCenter, 3, 30, 90, currentColor);
+            Vector2 lDownPoints[4] = {lDownBtmLeft, lDownBtmRight, lDownTopRight, lDownTopLeft};
+
+            Vector2 rUpTopLeft = (Vector2){
+                rightBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * (60 + 180)),
+                rightBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * (60 + 180))};
+            Vector2 rUpBtmLeft = (Vector2){
+                rightBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * (5 + 180)),
+                rightBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * (5 + 180))};
+            Vector2 rUpBtmRight = (Vector2){
+                rightBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * (5 + 180)) - cameraButtonWidth,
+                rightBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * (5 + 180))};
+            Vector2 rUpTopRight = (Vector2){
+                rightBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * (5 + 180)) - cameraButtonWidth,
+                rightBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * (60 + 180))};
+
+            DrawRing((Vector2){rightBtnCenter.x, rightBtnCenter.y}, walkButtonWidth / 2 + 8, walkButtonWidth / 2 + 13, 5 + 180, 60 + 180, 12, GRAY);
+            DrawLineEx(rUpBtmLeft, rUpBtmRight, 5, GRAY);
+            DrawLineEx(rUpBtmRight, rUpTopRight, 5, GRAY);
+            DrawLineEx(rUpTopRight, rUpTopLeft, 5, GRAY);
+            Vector2 rUpCenter = Vector2Scale(Vector2Add(rUpBtmLeft, rUpTopRight), 0.5f);
+            DrawPoly(rUpCenter, 3, 30, -90, currentColor);
+            Vector2 rUpPoints[4] = {rUpBtmLeft, rUpBtmRight, rUpTopRight, rUpTopLeft};
+
+            Vector2 rDownTopLeft = (Vector2){
+                rightBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * (-60 + 180)),
+                rightBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * (-60 + 180))};
+            Vector2 rDownBtmLeft = (Vector2){
+                rightBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * (-5 + 180)),
+                rightBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * (-5 + 180))};
+            Vector2 rDownBtmRight = (Vector2){
+                rightBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * (-5 + 180)) - cameraButtonWidth,
+                rightBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * (-5 + 180))};
+            Vector2 rDownTopRight = (Vector2){
+                rightBtnCenter.x + (walkButtonWidth / 2 + 10) * cosf(DEG2RAD * (-5 + 180)) - cameraButtonWidth,
+                rightBtnCenter.y + (walkButtonWidth / 2 + 10) * sinf(DEG2RAD * (-60 + 180))};
+
+            DrawRing((Vector2){rightBtnCenter.x, rightBtnCenter.y}, walkButtonWidth / 2 + 8, walkButtonWidth / 2 + 13, -5 + 180, -60 + 180, 12, GRAY);
+            DrawLineEx(rDownBtmLeft, rDownBtmRight, 5, GRAY);
+            DrawLineEx(rDownBtmRight, rDownTopRight, 5, GRAY);
+            DrawLineEx(rDownTopRight, rDownTopLeft, 5, GRAY);
+            Vector2 rDownCenter = Vector2Scale(Vector2Add(rDownBtmLeft, rDownTopRight), 0.5f);
+            DrawPoly(rDownCenter, 3, 30, 90, currentColor);
+            Vector2 rDownPoints[4] = {rDownBtmLeft, rDownBtmRight, rDownTopRight, rDownTopLeft};
+            
+
+            if (IsKeyDown(KEY_DOWN) ||
+                (CheckCollisionPointPoly(GetMousePosition(), rDownPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) || 
+                (CheckCollisionPointPoly(GetMousePosition(), lDownPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) )
+            {
+                targetCameraYOffset = -targetCameraYOffsetMax;
+            }
+            else if (IsKeyDown(KEY_UP) ||
+                (CheckCollisionPointPoly(GetMousePosition(), rUpPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) || 
+                (CheckCollisionPointPoly(GetMousePosition(), lUpPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) )
+            {
+                targetCameraYOffset = targetCameraYOffsetMax;
+            }
+            else
+            {
+                targetCameraYOffset = 0;
+            }
+        }
+
         int cX = globalState.screenWidth / 2;
         int cY = globalState.screenHeight / 2;
+
+        playerCamera.target = (Vector2){
+            cX - world.radius * cosf(world.player.atAngle),
+            cY + world.radius * sinf(world.player.atAngle)};
+        playerCamera.rotation = 90 + (world.player.atAngle * RAD2DEG);
+        currentCameraYOffset = Lerp(currentCameraYOffset, targetCameraYOffset, targetCameraLerpSpeed);
+        playerCamera.offset.y = globalState.screenHeight * 0.6f + currentCameraYOffset;
 
 #pragma region Render World
 
@@ -275,39 +433,11 @@ int main(void)
 
 #pragma region Process Input
 
-        if (IsKeyDown(KEY_RIGHT))
-            world.player.atAngle -= 0.0005f;
-        if (IsKeyDown(KEY_LEFT))
-            world.player.atAngle += 0.0005f;
-
         if (IsKeyPressed(KEY_TAB))
         {
             usingPlayerCamera = !usingPlayerCamera;
             activeCamera = usingPlayerCamera ? &playerCamera : &worldCamera;
         }
-
-        playerCamera.target = (Vector2){
-            cX - world.radius * cosf(world.player.atAngle),
-            cY + world.radius * sinf(world.player.atAngle)};
-        playerCamera.rotation = 90 + (world.player.atAngle * RAD2DEG);
-
-        if (IsKeyDown(KEY_DOWN))
-        {
-            targetCameraYOffset = -targetCameraYOffsetMax;
-            currentCameraYOffset = Lerp(currentCameraYOffset, -targetCameraYOffsetMax, targetCameraLerpSpeed);
-        }
-        else if (IsKeyDown(KEY_UP))
-        {
-            targetCameraYOffset = targetCameraYOffsetMax;
-            currentCameraYOffset = Lerp(currentCameraYOffset, targetCameraYOffsetMax, targetCameraLerpSpeed);
-        }
-        else
-        {
-            targetCameraYOffset = 0;
-        }
-
-        currentCameraYOffset = Lerp(currentCameraYOffset, targetCameraYOffset, targetCameraLerpSpeed);
-        playerCamera.offset.y = globalState.screenHeight * 0.6f + currentCameraYOffset;
 
 #pragma endregion
 
