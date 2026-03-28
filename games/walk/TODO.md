@@ -1,2 +1,4 @@
-* HUD buttons for controls
+* redraw floor
+* redraw trees
+* redraw clouds
     

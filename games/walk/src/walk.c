@@ -23,6 +23,11 @@ float randomFloat(float min, float max)
     return min + (max - min) * ((float)rand() / RAND_MAX);
 }
 
+int randomInt(int min, int max)
+{
+    return min + rand() % (max - min + 1);
+}
+
 // State
 
 typedef struct GlobalState
@@ -101,6 +106,47 @@ void GenerateClouds(World *world, int cloudCount, float cloudWidth[2], float clo
     }
 }
 
+int GenerateRocks(int totalRocks, int **pointsPerRock, float **boundingRadius, Vector2 **rockPoints, int pointsRange[2], float rockRadiusRange[2]) {
+    *pointsPerRock = (int *)malloc(totalRocks * sizeof(int));
+    *boundingRadius = (float *)malloc(totalRocks * sizeof(float));
+    int totalPoints = 0;
+    for (size_t i = 0; i < totalRocks; i++)
+    {
+        (*pointsPerRock)[i] = randomInt(pointsRange[0], pointsRange[1]);
+        (*boundingRadius)[i] = randomFloat(rockRadiusRange[0], rockRadiusRange[1]);
+        totalPoints += (*pointsPerRock)[i];
+    }
+    *rockPoints = (Vector2 *)malloc(totalPoints * sizeof(Vector2));
+    int pointsGenerated = 0;
+    for (size_t i = 0; i < totalRocks; i++)
+    {
+        float angleCovered = 0;
+        float rockRadius = (*boundingRadius)[i];
+        float rockOffset = rockRadius * 0.2f;
+        for (int j = 0; j < (*pointsPerRock)[i]; j++)
+        {
+
+                float averageAngle = (360-angleCovered) / ((*pointsPerRock)[i]-j);
+                float minAngleOffset = averageAngle * 0.75f;
+                float maxAngleOffset = averageAngle * 1.25f;
+                float newAngle = randomFloat(minAngleOffset, maxAngleOffset);
+                angleCovered += newAngle;
+                (*rockPoints)[pointsGenerated] = (Vector2){
+                    - rockRadius * cosf(angleCovered * DEG2RAD) + randomFloat(-rockOffset, 0),
+                    rockRadius * sinf(angleCovered * DEG2RAD) + randomFloat(-rockOffset, 0)};
+                pointsGenerated++;
+        }
+    }
+    
+    return totalRocks;
+}
+
+void freeRocks(Vector2 *rockPoints, int *pointsPerRock, float *boundingRadius) {
+    free(rockPoints);
+    free(pointsPerRock);
+    free(boundingRadius);
+}
+
 void DrawRectangleLinesPro(Rectangle rect, Vector2 origin, float rotation, Color color, int lineThick)
 {
 
@@ -126,21 +172,64 @@ int main(void)
 
     srand(time(NULL));
 
+#pragma region World Initialization
     GlobalState globalState;
     World world;
     bool isPlayerMoving = false;
+    
+    Vector2 *pointsInAllRocks = NULL;
+    Vector2 *rockCenters = NULL;
+    int *pointsPerRock = NULL;
+    float *boundingRadiusPerRock = NULL;
+    int totalRocks;
 
-#pragma region Initialization
+
     {
         globalState.screenWidth = 1024;
         globalState.screenHeight = 1024;
-        world.radius = 400;
+        world.radius = 600;
         world.player.width = 20;
         world.player.height = 30;
         world.trees = NULL; // Initialize pointers to NULL
         world.clouds = NULL;
         GenerateTrees(&world, 20, (float[2]){10, 20}, (float[2]){50, 150});
         GenerateClouds(&world, 13, (float[2]){50, 100}, (float[2]){20, 50}, (float[2]){60, 120});
+        totalRocks = GenerateRocks(60, &pointsPerRock, &boundingRadiusPerRock, &pointsInAllRocks, (int[2]){5, 8}, (float[2]){6, 20});
+        
+        rockCenters = (Vector2 *)malloc(totalRocks * sizeof(Vector2));
+        int pointsDrawn = 0;
+        for (int i = 0; i < totalRocks; i++)
+        {
+            float rockAtRadius = world.radius - boundingRadiusPerRock[i] - 10; // 20 is just an extra offset to make sure rocks dont intersect with the world border
+            float rockAngle = (((2 * PI) / totalRocks) * i) ;
+            Vector2 rockCenter = (Vector2){
+                globalState.screenWidth / 2 - rockAtRadius * cosf(rockAngle),
+                globalState.screenHeight / 2 + rockAtRadius * sinf(rockAngle)};
+            for (size_t j = 0; j < pointsPerRock[i]; j++)
+            {
+                pointsInAllRocks[pointsDrawn + j].x += rockCenter.x;
+                pointsInAllRocks[pointsDrawn + j].y += rockCenter.y;
+            }
+            pointsDrawn += pointsPerRock[i];
+            rockCenters[i] = rockCenter;
+        }
+
+        pointsDrawn = 0;
+        // for (size_t i = 0; i < totalRocks; i++)
+        // {
+            
+        //     TraceLog(LOG_INFO, TextFormat("Rock %d has %d points and bounding radius of %f", i, pointsPerRock[i], boundingRadiusPerRock[i]));
+        //     for (size_t j = 0; j < pointsPerRock[i]; j++)   
+        //     {
+        //         TraceLog(LOG_INFO, TextFormat("%d Rock No %d:Point %d: (%f, %f)", pointsDrawn, i, j, pointsInAllRocks[pointsDrawn + j].x, pointsInAllRocks[pointsDrawn + j].y));
+        //     }
+        //     pointsDrawn += pointsPerRock[i];
+            
+        // }
+        
+
+        
+
     }
 #pragma endregion
 
@@ -166,9 +255,9 @@ int main(void)
     worldCamera.target = (Vector2){globalState.screenWidth / 2.0f, globalState.screenHeight / 2.0f};
     worldCamera.offset = (Vector2){globalState.screenWidth / 2.0f, globalState.screenHeight / 2.0f};
     worldCamera.rotation = 0;
-    worldCamera.zoom = 0.5f;
+    worldCamera.zoom = 0.8f;
 
-    Camera2D *activeCamera = &playerCamera;
+    Camera2D *activeCamera = &worldCamera;
     bool usingPlayerCamera = true;
 
     float targetCameraLerpSpeed = 0.003f;
@@ -179,6 +268,9 @@ int main(void)
 
     InitWindow(globalState.screenWidth, globalState.screenHeight, "Walk");
     rlImGuiSetup(false); // sets up ImGui with ether a dark or light default theme
+
+
+
 
     while (!WindowShouldClose())
     {
@@ -263,7 +355,7 @@ int main(void)
 #pragma region Camera Buttons
         if (!isPlayerMoving)
         {
-             int lineThick = 5;
+            int lineThick = 5;
             int ringInner = walkButtonWidth / 2 + 8;
             int ringOuter = ringInner + lineThick;
             float ringCenter = walkButtonWidth / 2 + 10;
@@ -298,9 +390,6 @@ int main(void)
             Vector2 lDownCenter = Vector2Scale(Vector2Add(lDownBtmLeft, lDownTopRight), 0.5f);
             Vector2 lDownPoints[4] = {lDownBtmLeft, lDownBtmRight, lDownTopRight, lDownTopLeft};
 
-
-            
-
             Vector2 rUpTopLeft = (Vector2){
                 rightBtnCenter.x + ringCenter * cosf(DEG2RAD * (60 + 180)),
                 rightBtnCenter.y + ringCenter * sinf(DEG2RAD * (60 + 180))};
@@ -315,10 +404,6 @@ int main(void)
                 rightBtnCenter.y + ringCenter * sinf(DEG2RAD * (60 + 180))};
             Vector2 rUpCenter = Vector2Scale(Vector2Add(rUpBtmLeft, rUpTopRight), 0.5f);
             Vector2 rUpPoints[4] = {rUpBtmLeft, rUpBtmRight, rUpTopRight, rUpTopLeft};
-
-
-
-            
 
             Vector2 rDownTopLeft = (Vector2){
                 rightBtnCenter.x + ringCenter * cosf(DEG2RAD * (-60 + 180)),
@@ -335,22 +420,18 @@ int main(void)
             Vector2 rDownCenter = Vector2Scale(Vector2Add(rDownBtmLeft, rDownTopRight), 0.5f);
             Vector2 rDownPoints[4] = {rDownBtmLeft, rDownBtmRight, rDownTopRight, rDownTopLeft};
 
-
-
-            
-
             Color upButtonColor = buttonUnpressedColor;
             Color downButtonColor = buttonUnpressedColor;
             if (IsKeyDown(KEY_DOWN) ||
-                (CheckCollisionPointPoly(GetMousePosition(), rDownPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) || 
-                (CheckCollisionPointPoly(GetMousePosition(), lDownPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) )
+                (CheckCollisionPointPoly(GetMousePosition(), rDownPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) ||
+                (CheckCollisionPointPoly(GetMousePosition(), lDownPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)))
             {
                 targetCameraYOffset = -targetCameraYOffsetMax;
                 downButtonColor = buttonPressedColor;
             }
             else if (IsKeyDown(KEY_UP) ||
-                (CheckCollisionPointPoly(GetMousePosition(), rUpPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) || 
-                (CheckCollisionPointPoly(GetMousePosition(), lUpPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) )
+                     (CheckCollisionPointPoly(GetMousePosition(), rUpPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) ||
+                     (CheckCollisionPointPoly(GetMousePosition(), lUpPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)))
             {
                 targetCameraYOffset = targetCameraYOffsetMax;
                 upButtonColor = buttonPressedColor;
@@ -360,15 +441,11 @@ int main(void)
                 targetCameraYOffset = 0;
             }
 
-           
-
             DrawRing((Vector2){leftBtnCenter.x, leftBtnCenter.y}, ringInner, ringOuter, -60, -5, 12, upButtonColor);
             DrawLineEx(lUpBtmLeft, lUpBtmRight, 5, upButtonColor);
             DrawLineEx(lUpBtmRight, lUpTopRight, 5, upButtonColor);
             DrawLineEx(lUpTopRight, lUpTopLeft, 5, upButtonColor);
             DrawPoly(lUpCenter, 3, 30, -90, upButtonColor);
-
-            
 
             DrawRing((Vector2){leftBtnCenter.x, leftBtnCenter.y}, ringInner, ringOuter, 5, 60, 12, downButtonColor);
             DrawLineEx(lDownBtmLeft, lDownBtmRight, 5, downButtonColor);
@@ -387,7 +464,6 @@ int main(void)
             DrawLineEx(rDownBtmRight, rDownTopRight, 5, downButtonColor);
             DrawLineEx(rDownTopRight, rDownTopLeft, 5, downButtonColor);
             DrawPoly(rDownCenter, 3, 30, 90, downButtonColor);
-
         }
 #pragma endregion
 
@@ -406,6 +482,20 @@ int main(void)
         BeginMode2D(*activeCamera);
         // Draw Floor
         DrawRing((Vector2){cX, cY}, world.radius - 3, world.radius, 0, 360, 360, BLACK);
+        int pointsDrawn = 0;
+        for (int i = 0; i < totalRocks; i++)
+        {
+            for (size_t j = 0; j < pointsPerRock[i]; j++)
+            {
+                Vector2 p0 = pointsInAllRocks[pointsDrawn + j];
+                Vector2 p1 = pointsInAllRocks[pointsDrawn + (j + 1) % pointsPerRock[i]];
+                DrawLineEx(p0, p1, 1, GRAY);
+                DrawCircleV(p0, 0.4f, GRAY);
+            }
+
+            // Close the polygon with circle at last vertex too (from j loop it already draws p0 for last edge)
+            pointsDrawn += pointsPerRock[i];
+        }
 
         // Draw Trees
         for (int i = 0; i < world.treesCount; i++)
@@ -479,6 +569,8 @@ int main(void)
         free(world.trees);
     if (world.clouds != NULL)
         free(world.clouds);
+    if (pointsInAllRocks != NULL)
+        freeRocks(pointsInAllRocks, pointsPerRock, boundingRadiusPerRock);
 
     return 0;
 }
