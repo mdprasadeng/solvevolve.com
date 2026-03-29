@@ -197,6 +197,14 @@ float targetCameraYOffset = 0;
 
 void UpdateDrawFrame(void)
 {
+    if (IsWindowResized())
+    {
+        TraceLog(LOG_INFO, "Window resized to: %ix%i", GetScreenWidth(), GetScreenHeight());
+    }
+    if (IsKeyDown(KEY_F))
+    {
+        ToggleBorderlessWindowed();
+    }
     {
         BeginDrawing();
 
@@ -577,8 +585,11 @@ int main(void)
 
 #pragma endregion
 
+    TraceLog(LOG_INFO, "Monitor Resolution Before Init: %ix%i", GetMonitorWidth(0), GetMonitorHeight(0));
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(globalState.screenWidth, globalState.screenHeight, "Walk");
-
+    TraceLog(LOG_INFO, "Monitor Resolution After Init: %ix%i", GetMonitorWidth(0), GetMonitorHeight(0));
+    
 #ifdef PLATFORM_DESKTOP
     rlImGuiSetup(false); // sets up ImGui with ether a dark or light default theme
 #endif

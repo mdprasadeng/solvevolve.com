@@ -10,13 +10,13 @@ WLIB_PATH="-L ../lib/bin/web"
 LIBS="-lrlimgui -lraylib -lopengl32 -lgdi32 -lwinmm -luser32 -lshell32 -lstdc++"
 WLIBGS="-lraylib.web"
 CFLAGS="-g -Wall -Werror "
-OPTFLAGS="-DPLATFORM_WEB -DDGRAPHICS_API_OPENGL_ES2 -s USE_GLFW=3 -o walk.html --shell-file ../lib/src/raylib/src/minshell.html"
+OPTFLAGS="-DPLATFORM_WEB -DDGRAPHICS_API_OPENGL_ES2 -s USE_GLFW=3 -o walk.html --shell-file ../lib/src/raylib/src/shell.html"
 
 
 # 2. Build Process
 echo "Compiling $SRC..."
 
-$CC  $CFLAGS $SRC -o $OUT $INC $WLIB_PATH $WLIBGS $OPTFLAGS
+$CC  $CFLAGS $SRC -o $OUT $INC $WLIB_PATH $WLIBGS $OPTFLAGS -s EXPORTED_RUNTIME_METHODS=['requestFullscreen']
 
 # 3. Check if build succeeded
 if [ $? -eq 0 ]; then
@@ -24,7 +24,7 @@ if [ $? -eq 0 ]; then
     echo "Build Successful: $OUT"
     echo "Running game..."
     echo "---------------------------"
-    ./$OUT
+    http-server -p 8080
 else
     echo "Build Failed!"
     exit 1
