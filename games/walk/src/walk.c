@@ -5,8 +5,14 @@
 #include <math.h>
 #include <time.h>
 
+#ifdef PLATFORM_DESKTOP
 #include "rlImGui.h" // include the API header
 #include "dcimgui.h"
+#endif
+
+#if defined(PLATFORM_WEB)
+#include <emscripten/emscripten.h>
+#endif
 
 Color toColor(float col[4])
 {
@@ -20,7 +26,7 @@ Color toColor(float col[4])
 
 float randomFloat(float min, float max)
 {
-    return min + (max - min) * ((float)rand() / RAND_MAX);
+    return min + (max - min) * ((float)rand() / (float)RAND_MAX);
 }
 
 int randomInt(int min, int max)
@@ -106,7 +112,8 @@ void GenerateClouds(World *world, int cloudCount, float cloudWidth[2], float clo
     }
 }
 
-int GenerateRocks(int totalRocks, int **pointsPerRock, float **boundingRadius, Vector2 **rockPoints, int pointsRange[2], float rockRadiusRange[2]) {
+int GenerateRocks(int totalRocks, int **pointsPerRock, float **boundingRadius, Vector2 **rockPoints, int pointsRange[2], float rockRadiusRange[2])
+{
     *pointsPerRock = (int *)malloc(totalRocks * sizeof(int));
     *boundingRadius = (float *)malloc(totalRocks * sizeof(float));
     int totalPoints = 0;
@@ -126,22 +133,23 @@ int GenerateRocks(int totalRocks, int **pointsPerRock, float **boundingRadius, V
         for (int j = 0; j < (*pointsPerRock)[i]; j++)
         {
 
-                float averageAngle = (360-angleCovered) / ((*pointsPerRock)[i]-j);
-                float minAngleOffset = averageAngle * 0.75f;
-                float maxAngleOffset = averageAngle * 1.25f;
-                float newAngle = randomFloat(minAngleOffset, maxAngleOffset);
-                angleCovered += newAngle;
-                (*rockPoints)[pointsGenerated] = (Vector2){
-                    - rockRadius * cosf(angleCovered * DEG2RAD) + randomFloat(-rockOffset, 0),
-                    rockRadius * sinf(angleCovered * DEG2RAD) + randomFloat(-rockOffset, 0)};
-                pointsGenerated++;
+            float averageAngle = (360 - angleCovered) / ((*pointsPerRock)[i] - j);
+            float minAngleOffset = averageAngle * 0.75f;
+            float maxAngleOffset = averageAngle * 1.25f;
+            float newAngle = randomFloat(minAngleOffset, maxAngleOffset);
+            angleCovered += newAngle;
+            (*rockPoints)[pointsGenerated] = (Vector2){
+                -rockRadius * cosf(angleCovered * DEG2RAD) + randomFloat(-rockOffset, 0),
+                rockRadius * sinf(angleCovered * DEG2RAD) + randomFloat(-rockOffset, 0)};
+            pointsGenerated++;
         }
     }
-    
+
     return totalRocks;
 }
 
-void freeRocks(Vector2 *rockPoints, int *pointsPerRock, float *boundingRadius) {
+void freeRocks(Vector2 *rockPoints, int *pointsPerRock, float *boundingRadius)
+{
     free(rockPoints);
     free(pointsPerRock);
     free(boundingRadius);
@@ -167,119 +175,38 @@ void DrawRectangleLinesPro(Rectangle rect, Vector2 origin, float rotation, Color
     DrawLineEx(p4, p1, lineThick, color);
 }
 
-int main(void)
+GlobalState globalState;
+World world;
+bool isPlayerMoving = false;
+
+Vector2 *pointsInAllRocks = NULL;
+Vector2 *rockCenters = NULL;
+int *pointsPerRock = NULL;
+float *boundingRadiusPerRock = NULL;
+int totalRocks;
+
+int cX, cY;
+Camera2D playerCamera = {0};
+Camera2D worldCamera = {0};
+Camera2D *activeCamera = &playerCamera;
+bool usingPlayerCamera = true;
+float targetCameraLerpSpeed = 0.003f;
+float targetCameraYOffsetMax;
+float currentCameraYOffset = 0;
+float targetCameraYOffset = 0;
+
+void UpdateDrawFrame(void)
 {
-
-    srand(time(NULL));
-
-#pragma region World Initialization
-    GlobalState globalState;
-    World world;
-    bool isPlayerMoving = false;
-    
-    Vector2 *pointsInAllRocks = NULL;
-    Vector2 *rockCenters = NULL;
-    int *pointsPerRock = NULL;
-    float *boundingRadiusPerRock = NULL;
-    int totalRocks;
-
-
-    {
-        globalState.screenWidth = 1024;
-        globalState.screenHeight = 1024;
-        world.radius = 600;
-        world.player.width = 20;
-        world.player.height = 30;
-        world.trees = NULL; // Initialize pointers to NULL
-        world.clouds = NULL;
-        GenerateTrees(&world, 20, (float[2]){10, 20}, (float[2]){50, 150});
-        GenerateClouds(&world, 13, (float[2]){50, 100}, (float[2]){20, 50}, (float[2]){60, 120});
-        totalRocks = GenerateRocks(60, &pointsPerRock, &boundingRadiusPerRock, &pointsInAllRocks, (int[2]){5, 8}, (float[2]){6, 20});
-        
-        rockCenters = (Vector2 *)malloc(totalRocks * sizeof(Vector2));
-        int pointsDrawn = 0;
-        for (int i = 0; i < totalRocks; i++)
-        {
-            float rockAtRadius = world.radius - boundingRadiusPerRock[i] - 10; // 20 is just an extra offset to make sure rocks dont intersect with the world border
-            float rockAngle = (((2 * PI) / totalRocks) * i) ;
-            Vector2 rockCenter = (Vector2){
-                globalState.screenWidth / 2 - rockAtRadius * cosf(rockAngle),
-                globalState.screenHeight / 2 + rockAtRadius * sinf(rockAngle)};
-            for (size_t j = 0; j < pointsPerRock[i]; j++)
-            {
-                pointsInAllRocks[pointsDrawn + j].x += rockCenter.x;
-                pointsInAllRocks[pointsDrawn + j].y += rockCenter.y;
-            }
-            pointsDrawn += pointsPerRock[i];
-            rockCenters[i] = rockCenter;
-        }
-
-        pointsDrawn = 0;
-        // for (size_t i = 0; i < totalRocks; i++)
-        // {
-            
-        //     TraceLog(LOG_INFO, TextFormat("Rock %d has %d points and bounding radius of %f", i, pointsPerRock[i], boundingRadiusPerRock[i]));
-        //     for (size_t j = 0; j < pointsPerRock[i]; j++)   
-        //     {
-        //         TraceLog(LOG_INFO, TextFormat("%d Rock No %d:Point %d: (%f, %f)", pointsDrawn, i, j, pointsInAllRocks[pointsDrawn + j].x, pointsInAllRocks[pointsDrawn + j].y));
-        //     }
-        //     pointsDrawn += pointsPerRock[i];
-            
-        // }
-        
-
-        
-
-    }
-#pragma endregion
-
-#pragma region ImGui Variables
-
-    bool showDemo = false;
-    float IM_TREE_WIDTH[2] = {10, 20};
-    float IM_TREE_HEIGHT[2] = {50, 150};
-    float IM_CLOUD_WIDTH[2] = {50, 100};
-    float IM_CLOUD_HEIGHT[2] = {20, 50};
-    float IM_CLOUD_FLOATING_HEIGHT[2] = {200, 400};
-
-#pragma endregion
-
-#pragma region Camera Variables
-    Camera2D playerCamera = {0};
-    playerCamera.target = (Vector2){0, 0};
-    playerCamera.offset = (Vector2){globalState.screenWidth / 2.0f, globalState.screenHeight * 0.6f};
-    playerCamera.rotation = 90;
-    playerCamera.zoom = 5.0f;
-
-    Camera2D worldCamera = {0};
-    worldCamera.target = (Vector2){globalState.screenWidth / 2.0f, globalState.screenHeight / 2.0f};
-    worldCamera.offset = (Vector2){globalState.screenWidth / 2.0f, globalState.screenHeight / 2.0f};
-    worldCamera.rotation = 0;
-    worldCamera.zoom = 0.8f;
-
-    Camera2D *activeCamera = &worldCamera;
-    bool usingPlayerCamera = true;
-
-    float targetCameraLerpSpeed = 0.003f;
-    float targetCameraYOffsetMax = (globalState.screenHeight * 0.32f);
-    float currentCameraYOffset = 0;
-    float targetCameraYOffset = 0;
-#pragma endregion
-
-    InitWindow(globalState.screenWidth, globalState.screenHeight, "Walk");
-    rlImGuiSetup(false); // sets up ImGui with ether a dark or light default theme
-
-
-
-
-    while (!WindowShouldClose())
     {
         BeginDrawing();
+
+#ifdef PLATFORM_DESKTOP
         rlImGuiBegin(); // starts the ImGui content mode. Make all ImGui calls after this
+#endif
         ClearBackground(WHITE);
 
 #pragma region ImGui in HUD
-
+#ifdef PLATFORM_DESKTOP
         ImGui_ShowDemoWindow(&showDemo);
 
         ImGui_Begin("Render", NULL, 0);
@@ -304,6 +231,7 @@ int main(void)
         }
 
         ImGui_End();
+#endif
 
 #pragma endregion
 
@@ -467,8 +395,8 @@ int main(void)
         }
 #pragma endregion
 
-        int cX = globalState.screenWidth / 2;
-        int cY = globalState.screenHeight / 2;
+        cX = globalState.screenWidth / 2;
+        cY = globalState.screenHeight / 2;
 
         playerCamera.target = (Vector2){
             cX - world.radius * cosf(world.player.atAngle),
@@ -476,12 +404,16 @@ int main(void)
         playerCamera.rotation = 90 + (world.player.atAngle * RAD2DEG);
         currentCameraYOffset = Lerp(currentCameraYOffset, targetCameraYOffset, targetCameraLerpSpeed);
         playerCamera.offset.y = globalState.screenHeight * 0.6f + currentCameraYOffset;
+        targetCameraYOffsetMax = (globalState.screenHeight * 0.32f);
 
 #pragma region Render World
 
         BeginMode2D(*activeCamera);
         // Draw Floor
         DrawRing((Vector2){cX, cY}, world.radius - 3, world.radius, 0, 360, 360, BLACK);
+
+        DrawText(TextFormat("Current FPS: %i", GetFPS()), cX, cY, 20, BLACK);
+
         int pointsDrawn = 0;
         for (int i = 0; i < totalRocks; i++)
         {
@@ -557,11 +489,116 @@ int main(void)
 
 #pragma endregion
 
+#ifdef PLATFORM_DESKTOP
         rlImGuiEnd(); // ends the ImGui content mode. Make all ImGui calls before this
+#endif
         EndDrawing();
     }
+}
 
+int main(void)
+{
+
+    srand(time(NULL));
+
+#pragma region World Initialization
+
+    {
+        globalState.screenWidth = 1024;
+        globalState.screenHeight = 1024;
+        world.radius = 600;
+        world.player.width = 20;
+        world.player.height = 30;
+        world.trees = NULL; // Initialize pointers to NULL
+        world.clouds = NULL;
+        GenerateTrees(&world, 20, (float[2]){10, 20}, (float[2]){50, 150});
+        GenerateClouds(&world, 13, (float[2]){50, 100}, (float[2]){20, 50}, (float[2]){60, 120});
+
+        totalRocks = GenerateRocks(90, &pointsPerRock, &boundingRadiusPerRock, &pointsInAllRocks, (int[2]){5, 8}, (float[2]){6, 20});
+        rockCenters = (Vector2 *)malloc(totalRocks * sizeof(Vector2));
+        int pointsDrawn = 0;
+        for (int i = 0; i < totalRocks; i++)
+        {
+            float rockAtRadius = world.radius - boundingRadiusPerRock[i] - 10; // 20 is just an extra offset to make sure rocks dont intersect with the world border
+            rockAtRadius = rockAtRadius * randomFloat(0.9f, 1.0f);             // add some noise to the radius of the rock to make it look more natural
+            float gapAngle = (2 * PI) / totalRocks;
+            gapAngle = gapAngle * randomFloat(0.95f, 1.0f); // add some noise to the angle between rocks to make it look more natural
+            float rockAngle = (gapAngle * i);
+            Vector2 rockCenter = (Vector2){
+                globalState.screenWidth / 2 - rockAtRadius * cosf(rockAngle),
+                globalState.screenHeight / 2 + rockAtRadius * sinf(rockAngle)};
+            for (size_t j = 0; j < pointsPerRock[i]; j++)
+            {
+                pointsInAllRocks[pointsDrawn + j].x += rockCenter.x;
+                pointsInAllRocks[pointsDrawn + j].y += rockCenter.y;
+            }
+            pointsDrawn += pointsPerRock[i];
+            rockCenters[i] = rockCenter;
+        }
+
+        pointsDrawn = 0;
+        // for (size_t i = 0; i < totalRocks; i++)
+        // {
+
+        //     TraceLog(LOG_INFO, TextFormat("Rock %d has %d points and bounding radius of %f", i, pointsPerRock[i], boundingRadiusPerRock[i]));
+        //     for (size_t j = 0; j < pointsPerRock[i]; j++)
+        //     {
+        //         TraceLog(LOG_INFO, TextFormat("%d Rock No %d:Point %d: (%f, %f)", pointsDrawn, i, j, pointsInAllRocks[pointsDrawn + j].x, pointsInAllRocks[pointsDrawn + j].y));
+        //     }
+        //     pointsDrawn += pointsPerRock[i];
+
+        // }
+    }
+#pragma endregion
+
+#pragma region ImGui Variables
+#ifdef PLATFORM_DESKTOP
+    bool showDemo = false;
+    float IM_TREE_WIDTH[2] = {10, 20};
+    float IM_TREE_HEIGHT[2] = {50, 150};
+    float IM_CLOUD_WIDTH[2] = {50, 100};
+    float IM_CLOUD_HEIGHT[2] = {20, 50};
+    float IM_CLOUD_FLOATING_HEIGHT[2] = {200, 400};
+#endif
+
+#pragma endregion
+
+#pragma region Camera Variables
+
+    playerCamera.target = (Vector2){0, 0};
+    playerCamera.offset = (Vector2){globalState.screenWidth / 2.0f, globalState.screenHeight * 0.6f};
+    playerCamera.rotation = 90;
+    playerCamera.zoom = 5.0f;
+
+    worldCamera.target = (Vector2){globalState.screenWidth / 2.0f, globalState.screenHeight / 2.0f};
+    worldCamera.offset = (Vector2){globalState.screenWidth / 2.0f, globalState.screenHeight / 2.0f};
+    worldCamera.rotation = 0;
+    worldCamera.zoom = 0.8f;
+
+#pragma endregion
+
+    InitWindow(globalState.screenWidth, globalState.screenHeight, "Walk");
+
+#ifdef PLATFORM_DESKTOP
+    rlImGuiSetup(false); // sets up ImGui with ether a dark or light default theme
+#endif
+
+#if defined(PLATFORM_WEB)
+    emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
+#else
+    SetTargetFPS(60); // Set our game to run at 60 frames-per-second
+    //--------------------------------------------------------------------------------------
+
+    // Main game loop
+    while (!WindowShouldClose()) // Detect window close button or ESC key
+    {
+        UpdateDrawFrame();
+    }
+#endif
+
+#ifdef PLATFORM_DESKTOP
     rlImGuiShutdown(); // cleans up ImGui
+#endif
     CloseWindow();
 
     // Cleanup
