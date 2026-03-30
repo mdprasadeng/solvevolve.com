@@ -88,6 +88,8 @@ typedef struct GameplayParams
     float arcToShowAtRest;
     float arcToShowWhileMoving;
     float frameCounter;
+    float frameDuratinForZoomIn;
+    float frameDuratinForZoomOut;
 } GameplayParams;
 
 typedef struct DebugParams
@@ -194,7 +196,7 @@ void GenerateRocks(World *world, WorldParams params)
         gapAngle = gapAngle * randomFloat(0.95f, 1.0f); // add some noise to the angle between rocks to make it look more natural
         float rockAngle = (gapAngle * i);
         Vector2 rockCenter = (Vector2){
-            - rockAtRadius * cosf(rockAngle),
+            -rockAtRadius * cosf(rockAngle),
             rockAtRadius * sinf(rockAngle)};
         for (size_t j = 0; j < world->floor.pointsPerRock[i]; j++)
         {
@@ -246,6 +248,7 @@ typedef struct MyCamera
     float currentCameraYOffset;
     float targetCameraYOffset;
     float targetZoom;
+    float startZoom;
 } MyCamera;
 
 #pragma endregion
@@ -258,16 +261,15 @@ MyCamera myCamera = {
     .worldCamera = {.zoom = 0.9f},
 };
 
-
-
 GameplayParams gameplayParams = {
-    .cameraLerpSpeed = 0.1f, 
-    .targetCameraYOffsetMax = 50.0f, 
-    .moveBySpeed = 2 * PI/ ( 60 * 60),
+    .cameraLerpSpeed = 0.1f,
+    .targetCameraYOffsetMax = 50.0f,
+    .moveBySpeed = 2 * PI / (120 * 60),
     .arcToShowAtRest = 60.0f,
     .arcToShowWhileMoving = 20.0f,
     .frameCounter = 0,
-};
+    .frameDuratinForZoomIn = 60.0f,
+    .frameDuratinForZoomOut = 6 * 60.0f};
 
 DebugParams debugParams = {
     .showDemoWindow = false,
@@ -277,9 +279,37 @@ DebugParams debugParams = {
 
 void UpdateCameraZoom()
 {
+
+    if (myCamera.startZoom < myCamera.targetZoom)
+    {
+        if (gameplayParams.frameCounter <= gameplayParams.frameDuratinForZoomIn)
+        {
+            myCamera.playerCamera.zoom = EaseCubicOut(gameplayParams.frameCounter, myCamera.startZoom, myCamera.targetZoom - myCamera.startZoom, gameplayParams.frameDuratinForZoomIn);
+        }
+        else
+        {
+            myCamera.playerCamera.zoom = myCamera.targetZoom;
+        }
+    }
+    else
+    {
+        if (gameplayParams.frameCounter <= gameplayParams.frameDuratinForZoomOut)
+        {
+            myCamera.playerCamera.zoom = EaseSineIn(gameplayParams.frameCounter, myCamera.startZoom, myCamera.targetZoom - myCamera.startZoom, gameplayParams.frameDuratinForZoomOut);
+        }
+        else
+        {
+            myCamera.playerCamera.zoom = myCamera.targetZoom;
+        }
+    }
+}
+void StartZooming()
+{
+    TraceLog(LOG_INFO, "StartZooming called. player is moving: %i", world.player.isMoving);
     float targetArc = world.player.isMoving ? gameplayParams.arcToShowWhileMoving : gameplayParams.arcToShowAtRest;
-    myCamera.targetZoom = screen.width / (world.floor.radius * cosf(DEG2RAD * (90 - targetArc/2)) * 2);
-    myCamera.playerCamera.zoom = EaseCubicInOut(gameplayParams.frameCounter, myCamera.playerCamera.zoom, myCamera.targetZoom - myCamera.playerCamera.zoom, 60);
+    myCamera.startZoom = myCamera.playerCamera.zoom;
+    myCamera.targetZoom = screen.width / (world.floor.radius * cosf(DEG2RAD * (90 - targetArc / 2)) * 2);
+    gameplayParams.frameCounter = 0;
 }
 
 void UpdateDrawFrame(void)
@@ -296,24 +326,24 @@ void UpdateDrawFrame(void)
         ClearBackground(WHITE);
 
 #pragma region ImGui in HUD
-// #ifdef PLATFORM_DESKTOP
+        // #ifdef PLATFORM_DESKTOP
         ImGui_ShowDemoWindow(&debugParams.showDemoWindow);
 
         ImGui_Begin("Render", NULL, 0);
         ImGui_Text("FPS: %i", GetFPS());
-        
+
         ImGui_Checkbox("Show Demo Window", &debugParams.showDemoWindow);
         ImGui_Checkbox("Show Angle Values", &debugParams.showAngleValues);
         ImGui_SliderFloat("Camera Lerp Speed", &gameplayParams.cameraLerpSpeed, 0.01f, 0.1f);
-        
+
         int arcChanged = ImGui_SliderFloat("Arc To Show", &debugParams.arcToShow, 1.0f, 60.0f);
         if (arcChanged)
         {
-            float angle = DEG2RAD * (90 - debugParams.arcToShow/2.0f);
+            float angle = DEG2RAD * (90 - debugParams.arcToShow / 2.0f);
             myCamera.playerCamera.zoom = screen.width / (world.floor.radius * cosf(angle) * 2);
         }
         ImGui_End();
-// #endif
+        // #endif
 
 #pragma endregion
 
@@ -359,8 +389,20 @@ void UpdateDrawFrame(void)
             walkButtonWidth / 2 - 5, walkButtonWidth / 2, 0, 360, 36, currentColor);
         DrawPoly(rightBtnCenter, 3, walkButtonWidth / 2 - 40, 0, currentColor);
 
+        bool wasMoving = world.player.isMoving;
+
         world.player.atAngle += moveAngleBy;
         world.player.isMoving = moveAngleBy != 0;
+
+        if (wasMoving && moveAngleBy == 0)
+        {
+            StartZooming();
+        }
+        if (!wasMoving && moveAngleBy != 0)
+        {
+            StartZooming();
+        }
+
 #pragma endregion
 #pragma region Camera Buttons
         if (!world.player.isMoving)
@@ -591,15 +633,14 @@ void UpdatePortraitFrame(void)
 int main(void)
 {
 
-    #ifdef PLATFORM_WEB
-    
-        int width = emscripten_run_script_int("window.innerWidth");
-        int height = emscripten_run_script_int("window.innerHeight");
-    #else
-        int width = 16 * 90;
-        int height = 9 * 90;
-    #endif
+#ifdef PLATFORM_WEB
 
+    int width = emscripten_run_script_int("window.innerWidth");
+    int height = emscripten_run_script_int("window.innerHeight");
+#else
+    int width = 16 * 90;
+    int height = 9 * 90;
+#endif
 
     srand(time(NULL));
     InitWorldParams(&params);
@@ -610,16 +651,17 @@ int main(void)
     InitWindow(width, height, "Walk");
     screen.width = GetScreenWidth();
     screen.height = GetScreenHeight();
-    
+
     myCamera.playerCamera.target = (Vector2){0, 0};
     myCamera.playerCamera.offset = (Vector2){screen.width / 2, screen.height / 2};
-    myCamera.playerCamera.zoom = screen.width / (world.floor.radius * (PI/4));
-    
+    myCamera.targetZoom = screen.width / (world.floor.radius * (PI / 4));
+    myCamera.startZoom = myCamera.playerCamera.zoom;
+
     myCamera.worldCamera.rotation = 0;
     myCamera.worldCamera.target = (Vector2){0, 0};
     myCamera.worldCamera.offset = (Vector2){screen.width / 2, screen.height / 2};
     myCamera.worldCamera.zoom = (screen.height) / (world.floor.radius * 2 + 2 * params.cloudFloatingHeight[1] + 100);
-    
+
     myCamera.activeCamera = &myCamera.playerCamera;
 
 #ifdef PLATFORM_DESKTOP
@@ -637,10 +679,10 @@ int main(void)
         {
             screen.width = GetScreenWidth();
             screen.height = GetScreenHeight();
-            
-            //TODO: Verify this implementation
+
+            // TODO: Verify this implementation
             myCamera.playerCamera.offset = (Vector2){screen.width / 2, screen.height / 2};
-            myCamera.playerCamera.zoom = screen.width / (world.floor.radius * (PI/4));
+            myCamera.playerCamera.zoom = screen.width / (world.floor.radius * (PI / 4));
             myCamera.worldCamera.offset = (Vector2){screen.width / 2, screen.height / 2};
             myCamera.worldCamera.zoom = (screen.height) / (world.floor.radius * 2 + 2 * params.cloudFloatingHeight[1] + 100);
         }
