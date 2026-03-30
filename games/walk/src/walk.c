@@ -87,6 +87,7 @@ typedef struct GameplayParams
     float targetCameraYOffsetMax;
     float arcToShowAtRest;
     float arcToShowWhileMoving;
+    float frameCounter;
 } GameplayParams;
 
 typedef struct DebugParams
@@ -265,6 +266,7 @@ GameplayParams gameplayParams = {
     .moveBySpeed = 2 * PI/ ( 60 * 60),
     .arcToShowAtRest = 60.0f,
     .arcToShowWhileMoving = 20.0f,
+    .frameCounter = 0,
 };
 
 DebugParams debugParams = {
@@ -277,12 +279,13 @@ void UpdateCameraZoom()
 {
     float targetArc = world.player.isMoving ? gameplayParams.arcToShowWhileMoving : gameplayParams.arcToShowAtRest;
     myCamera.targetZoom = screen.width / (world.floor.radius * cosf(DEG2RAD * (90 - targetArc/2)) * 2);
-    myCamera.playerCamera.zoom = Lerp(myCamera.playerCamera.zoom, myCamera.targetZoom, gameplayParams.cameraLerpSpeed);
+    myCamera.playerCamera.zoom = EaseCubicInOut(gameplayParams.frameCounter, myCamera.playerCamera.zoom, myCamera.targetZoom - myCamera.playerCamera.zoom, 60);
 }
 
 void UpdateDrawFrame(void)
 {
 
+    gameplayParams.frameCounter += 1;
     UpdateCameraZoom();
     {
         BeginDrawing();
