@@ -1,8 +1,7 @@
 * get it up on solvevolve.com
-* take screenshot
 * trigger game end screen on some condition
 * game start screen
-
+* take screenshot
 
 Ideas
 * walk
@@ -48,6 +47,7 @@ wait and act
     * wait to cross a armadillo or pangollin or mole
     * wait to see an egg crack open and baby come out
     * wait to see flower boom
+    * wait to see a leave or feather fall slowly down
 * persistance
     * some trees, clouds, rocks
     * moon cycle tracked somehow
