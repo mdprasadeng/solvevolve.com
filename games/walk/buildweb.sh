@@ -24,7 +24,6 @@ if [ $? -eq 0 ]; then
     echo "Build Successful: $OUT"
     echo "Running game..."
     echo "---------------------------"
-    http-server -p 8080
 else
     echo "Build Failed!"
     exit 1

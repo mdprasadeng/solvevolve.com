@@ -1,4 +1,7 @@
-* get it up on solvevolve.com
+* design for a certain aspect ratio
+    * may be just 16*9
+* figure out different zoom levels mathematically
+* change controls
 * trigger game end screen on some condition
 * game start screen
 * take screenshot
@@ -46,16 +49,23 @@ wait and act
 * waiting mini games
     * wait to cross a armadillo or pangollin or mole
     * wait to see an egg crack open and baby come out
-    * wait to see flower boom
+    * wait to see flower bloom
     * wait to see a leave or feather fall slowly down
 * persistance
     * some trees, clouds, rocks
     * moon cycle tracked somehow
         do a transition when halfway through game
-
-
+* butterfly
+* relics
+    * flags
+    * sand castle
 
 * consistency via a tree that keeps growing
 * armadillo can roll and run
 * a God ray like cylinder around hero as space of interactivity
- 
+
+
+* Observe and interact 
+    * wait for a flower to bloom and then get bees and flower in same frame for bees to find flowers
+    * wait for a egg to hatch and get mother bird and baby in the same frame
+    

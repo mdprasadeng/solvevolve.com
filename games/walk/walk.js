@@ -6001,6 +6001,11 @@ async function createWasm() {
       abortOnCannotGrowMemory(requestedSize);
     };
 
+  /** @suppress{checkTypes} */
+  var _emscripten_run_script_int = (ptr) => {
+      return eval(UTF8ToString(ptr))|0;
+    };
+
   /** @suppress {checkTypes} */
   var _emscripten_sample_gamepad_data = () => {
       try {
@@ -9259,49 +9264,49 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp('fetchSettings');
 }
 var ASM_CONSTS = {
-  92405: () => { if (document.fullscreenElement) return 1; },  
- 92451: () => { return Module.canvas.width; },  
- 92483: () => { return parseInt(Module.canvas.style.width); },  
- 92531: () => { document.exitFullscreen(); },  
- 92558: () => { setTimeout(function(){ Module.requestFullscreen(false, false); }, 100); },  
- 92630: () => { if (document.fullscreenElement) return 1; },  
- 92676: () => { return Module.canvas.width; },  
- 92708: () => { return screen.width; },  
- 92733: () => { document.exitFullscreen(); },  
- 92760: () => { setTimeout(function() { Module.requestFullscreen(false, true); setTimeout(function() { canvas.style.width="unset"; }, 100); }, 100); },  
- 92893: () => { return window.innerWidth; },  
- 92919: () => { return window.innerHeight; },  
- 92946: () => { if (document.fullscreenElement) return 1; },  
- 92992: () => { return Module.canvas.width; },  
- 93024: () => { return parseInt(Module.canvas.style.width); },  
- 93072: () => { if (document.fullscreenElement) return 1; },  
- 93118: () => { return Module.canvas.width; },  
- 93150: () => { return screen.width; },  
- 93175: () => { return window.innerWidth; },  
- 93201: () => { return window.innerHeight; },  
- 93228: () => { if (document.fullscreenElement) return 1; },  
- 93274: () => { return Module.canvas.width; },  
- 93306: () => { return screen.width; },  
- 93331: () => { document.exitFullscreen(); },  
- 93358: () => { if (document.fullscreenElement) return 1; },  
- 93404: () => { return Module.canvas.width; },  
- 93436: () => { return parseInt(Module.canvas.style.width); },  
- 93484: () => { document.exitFullscreen(); },  
- 93511: ($0) => { Module.canvas.style.opacity = $0; },  
- 93549: () => { return screen.width; },  
- 93574: () => { return screen.height; },  
- 93600: () => { return window.screenX; },  
- 93627: () => { return window.screenY; },  
- 93654: () => { return window.devicePixelRatio; },  
- 93690: ($0) => { navigator.clipboard.writeText(UTF8ToString($0)); },  
- 93743: ($0) => { Module.canvas.style.cursor = UTF8ToString($0); },  
- 93794: () => { Module.canvas.style.cursor = 'none'; },  
- 93831: ($0, $1, $2, $3) => { try { navigator.getGamepads()[$0].vibrationActuator.playEffect('dual-rumble', { startDelay: 0, duration: $3, weakMagnitude: $1, strongMagnitude: $2 }); } catch (e) { try { navigator.getGamepads()[$0].hapticActuators[0].pulse($2, $3); } catch (e) { } } },  
- 94087: ($0) => { Module.canvas.style.cursor = UTF8ToString($0); },  
- 94138: () => { if (document.pointerLockElement) return 1; },  
- 94185: () => { if (document.fullscreenElement) return 1; },  
- 94231: () => { return window.innerWidth; },  
- 94257: () => { return window.innerHeight; }
+  92485: () => { if (document.fullscreenElement) return 1; },  
+ 92531: () => { return Module.canvas.width; },  
+ 92563: () => { return parseInt(Module.canvas.style.width); },  
+ 92611: () => { document.exitFullscreen(); },  
+ 92638: () => { setTimeout(function(){ Module.requestFullscreen(false, false); }, 100); },  
+ 92710: () => { if (document.fullscreenElement) return 1; },  
+ 92756: () => { return Module.canvas.width; },  
+ 92788: () => { return screen.width; },  
+ 92813: () => { document.exitFullscreen(); },  
+ 92840: () => { setTimeout(function() { Module.requestFullscreen(false, true); setTimeout(function() { canvas.style.width="unset"; }, 100); }, 100); },  
+ 92973: () => { return window.innerWidth; },  
+ 92999: () => { return window.innerHeight; },  
+ 93026: () => { if (document.fullscreenElement) return 1; },  
+ 93072: () => { return Module.canvas.width; },  
+ 93104: () => { return parseInt(Module.canvas.style.width); },  
+ 93152: () => { if (document.fullscreenElement) return 1; },  
+ 93198: () => { return Module.canvas.width; },  
+ 93230: () => { return screen.width; },  
+ 93255: () => { return window.innerWidth; },  
+ 93281: () => { return window.innerHeight; },  
+ 93308: () => { if (document.fullscreenElement) return 1; },  
+ 93354: () => { return Module.canvas.width; },  
+ 93386: () => { return screen.width; },  
+ 93411: () => { document.exitFullscreen(); },  
+ 93438: () => { if (document.fullscreenElement) return 1; },  
+ 93484: () => { return Module.canvas.width; },  
+ 93516: () => { return parseInt(Module.canvas.style.width); },  
+ 93564: () => { document.exitFullscreen(); },  
+ 93591: ($0) => { Module.canvas.style.opacity = $0; },  
+ 93629: () => { return screen.width; },  
+ 93654: () => { return screen.height; },  
+ 93680: () => { return window.screenX; },  
+ 93707: () => { return window.screenY; },  
+ 93734: () => { return window.devicePixelRatio; },  
+ 93770: ($0) => { navigator.clipboard.writeText(UTF8ToString($0)); },  
+ 93823: ($0) => { Module.canvas.style.cursor = UTF8ToString($0); },  
+ 93874: () => { Module.canvas.style.cursor = 'none'; },  
+ 93911: ($0, $1, $2, $3) => { try { navigator.getGamepads()[$0].vibrationActuator.playEffect('dual-rumble', { startDelay: 0, duration: $3, weakMagnitude: $1, strongMagnitude: $2 }); } catch (e) { try { navigator.getGamepads()[$0].hapticActuators[0].pulse($2, $3); } catch (e) { } } },  
+ 94167: ($0) => { Module.canvas.style.cursor = UTF8ToString($0); },  
+ 94218: () => { if (document.pointerLockElement) return 1; },  
+ 94265: () => { if (document.fullscreenElement) return 1; },  
+ 94311: () => { return window.innerWidth; },  
+ 94337: () => { return window.innerHeight; }
 };
 function SetCanvasIdJs(out,outSize) { var canvasId = "#" + Module.canvas.id; stringToUTF8(canvasId, out, outSize); }
 
@@ -9717,6 +9722,8 @@ var wasmImports = {
   emscripten_glViewport: _emscripten_glViewport,
   /** @export */
   emscripten_resize_heap: _emscripten_resize_heap,
+  /** @export */
+  emscripten_run_script_int: _emscripten_run_script_int,
   /** @export */
   emscripten_sample_gamepad_data: _emscripten_sample_gamepad_data,
   /** @export */

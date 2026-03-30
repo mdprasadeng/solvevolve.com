@@ -12,7 +12,7 @@ CFLAGS="-g -Wall -Werror "
 # 2. Build Process
 echo "Compiling $SRC..."
 
-$CC $CFLAGS$SRC -o $OUT $INC $LIB_PATH $LIBS
+$CC -DPLATFORM_DESKTOP $CFLAGS$SRC -o $OUT $INC $LIB_PATH $LIBS
 
 # 3. Check if build succeeded
 if [ $? -eq 0 ]; then

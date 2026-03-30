@@ -1,10 +1,13 @@
 #include "raylib.h"
 #include "raymath.h"
+#include "reasings.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
 #include "helper.h"
+
+#define PLATFORM_DESKTOP 1
 
 #ifdef PLATFORM_DESKTOP
 #include "rlImGui.h" // include the API header
@@ -82,7 +85,16 @@ typedef struct GameplayParams
     float moveBySpeed;
     float cameraLerpSpeed;
     float targetCameraYOffsetMax;
+    float arcToShowAtRest;
+    float arcToShowWhileMoving;
 } GameplayParams;
+
+typedef struct DebugParams
+{
+    bool showDemoWindow;
+    bool showAngleValues;
+    float arcToShow;
+} DebugParams;
 
 #pragma endregion
 
@@ -232,6 +244,7 @@ typedef struct MyCamera
     Camera2D *activeCamera;
     float currentCameraYOffset;
     float targetCameraYOffset;
+    float targetZoom;
 } MyCamera;
 
 #pragma endregion
@@ -247,13 +260,30 @@ MyCamera myCamera = {
 
 
 GameplayParams gameplayParams = {
-    .cameraLerpSpeed = 0.003f, 
+    .cameraLerpSpeed = 0.1f, 
     .targetCameraYOffsetMax = 50.0f, 
-    .moveBySpeed = 2 * PI/ ( 20 * 60) };
+    .moveBySpeed = 2 * PI/ ( 60 * 60),
+    .arcToShowAtRest = 60.0f,
+    .arcToShowWhileMoving = 20.0f,
+};
+
+DebugParams debugParams = {
+    .showDemoWindow = false,
+    .showAngleValues = true,
+    .arcToShow = 10,
+};
+
+void UpdateCameraZoom()
+{
+    float targetArc = world.player.isMoving ? gameplayParams.arcToShowWhileMoving : gameplayParams.arcToShowAtRest;
+    myCamera.targetZoom = screen.width / (world.floor.radius * cosf(DEG2RAD * (90 - targetArc/2)) * 2);
+    myCamera.playerCamera.zoom = Lerp(myCamera.playerCamera.zoom, myCamera.targetZoom, gameplayParams.cameraLerpSpeed);
+}
 
 void UpdateDrawFrame(void)
 {
 
+    UpdateCameraZoom();
     {
         BeginDrawing();
 
@@ -263,32 +293,24 @@ void UpdateDrawFrame(void)
         ClearBackground(WHITE);
 
 #pragma region ImGui in HUD
-#ifdef PLATFORM_DESKTOP
-        ImGui_ShowDemoWindow(&showDemo);
+// #ifdef PLATFORM_DESKTOP
+        ImGui_ShowDemoWindow(&debugParams.showDemoWindow);
 
         ImGui_Begin("Render", NULL, 0);
-        ImGui_InputFloat("Radius", &world.radius);
-        bool regenerateTrees = false;
-        regenerateTrees |= ImGui_InputInt("Tree Count", &world.treesCount);
-        regenerateTrees |= ImGui_InputFloat2("Tree Width Range", IM_TREE_WIDTH);
-        regenerateTrees |= ImGui_InputFloat2("Tree Height Range", IM_TREE_HEIGHT);
-        if (regenerateTrees)
+        ImGui_Text("FPS: %i", GetFPS());
+        
+        ImGui_Checkbox("Show Demo Window", &debugParams.showDemoWindow);
+        ImGui_Checkbox("Show Angle Values", &debugParams.showAngleValues);
+        ImGui_SliderFloat("Camera Lerp Speed", &gameplayParams.cameraLerpSpeed, 0.01f, 0.1f);
+        
+        int arcChanged = ImGui_SliderFloat("Arc To Show", &debugParams.arcToShow, 1.0f, 60.0f);
+        if (arcChanged)
         {
-            GenerateTrees(&world, world.treesCount, IM_TREE_WIDTH, IM_TREE_HEIGHT);
+            float angle = DEG2RAD * (90 - debugParams.arcToShow/2.0f);
+            myCamera.playerCamera.zoom = screen.width / (world.floor.radius * cosf(angle) * 2);
         }
-
-        bool regenerateClouds = false;
-        regenerateClouds |= ImGui_InputInt("Cloud Count", &world.cloudsCount);
-        regenerateClouds |= ImGui_InputFloat2("Cloud Width Range", IM_CLOUD_WIDTH);
-        regenerateClouds |= ImGui_InputFloat2("Cloud Height Range", IM_CLOUD_HEIGHT);
-        regenerateClouds |= ImGui_InputFloat2("Cloud Floating Height Range", IM_CLOUD_FLOATING_HEIGHT);
-        if (regenerateClouds)
-        {
-            GenerateClouds(&world, world.cloudsCount, IM_CLOUD_WIDTH, IM_CLOUD_HEIGHT, IM_CLOUD_FLOATING_HEIGHT);
-        }
-
         ImGui_End();
-#endif
+// #endif
 
 #pragma endregion
 
@@ -465,6 +487,18 @@ void UpdateDrawFrame(void)
         // Draw Floor
         DrawRing((Vector2){0, 0}, world.floor.radius - 3, world.floor.radius, 0, 360, 360, BLACK);
 
+        if (debugParams.showAngleValues)
+        {
+            for (int i = 0; i < 360; i += 10)
+            {
+                float angleRad = i * DEG2RAD;
+                Vector2 pos = (Vector2){
+                    -(world.floor.radius + 15) * cosf(angleRad),
+                    (world.floor.radius + 15) * sinf(angleRad)};
+                DrawText(TextFormat("%i", i), pos.x - 10, pos.y - 10, 10, DARKGRAY);
+            }
+        }
+
         int pointsDrawn = 0;
         for (int i = 0; i < world.floor.totalRocks; i++)
         {
@@ -546,15 +580,31 @@ void UpdateDrawFrame(void)
     }
 }
 
+void UpdatePortraitFrame(void)
+{
+    DrawText("Please rotate your device to landscape mode", screen.width / 2 - 150, screen.height / 2, 20, BLACK);
+}
+
 int main(void)
 {
+
+    #ifdef PLATFORM_WEB
+    
+        int width = emscripten_run_script_int("window.innerWidth");
+        int height = emscripten_run_script_int("window.innerHeight");
+    #else
+        int width = 16 * 90;
+        int height = 9 * 90;
+    #endif
+
 
     srand(time(NULL));
     InitWorldParams(&params);
     GenerateWorld(&world, params);
 
+    TraceLog(LOG_INFO, "Screen Width: %i, Screen Height: %i", width, height);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-    InitWindow(838*2, 450*2, "Walk");
+    InitWindow(width, height, "Walk");
     screen.width = GetScreenWidth();
     screen.height = GetScreenHeight();
     
@@ -580,6 +630,17 @@ int main(void)
 
     while (!WindowShouldClose()) // Detect window close button or ESC key
     {
+        if (IsWindowResized())
+        {
+            screen.width = GetScreenWidth();
+            screen.height = GetScreenHeight();
+            
+            //TODO: Verify this implementation
+            myCamera.playerCamera.offset = (Vector2){screen.width / 2, screen.height / 2};
+            myCamera.playerCamera.zoom = screen.width / (world.floor.radius * (PI/4));
+            myCamera.worldCamera.offset = (Vector2){screen.width / 2, screen.height / 2};
+            myCamera.worldCamera.zoom = (screen.height) / (world.floor.radius * 2 + 2 * params.cloudFloatingHeight[1] + 100);
+        }
         UpdateDrawFrame();
     }
 #endif
