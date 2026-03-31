@@ -1,3 +1,5 @@
+#pragma region Includes
+
 #include "raylib.h"
 #include "raymath.h"
 #include "reasings.h"
@@ -7,25 +9,27 @@
 #include <time.h>
 #include "helper.h"
 
-#define PLATFORM_DESKTOP 1
-
-#ifdef PLATFORM_DESKTOP
+#if defined(PLATFORM_WEB)
+#include <emscripten/emscripten.h>
+#else
 #include "rlImGui.h" // include the API header
 #include "dcimgui.h"
 #endif
 
-#if defined(PLATFORM_WEB)
-#include <emscripten/emscripten.h>
-#endif
+#pragma endregion
 
-#pragma region Game Definitions
+#pragma region Data
+typedef enum PlayerState {
+    PLAYER_STATE_IDLE,
+    PLAYER_STATE_MOVING_LEFT,
+    PLAYER_STATE_MOVING_RIGHT
+} PlayerState;
 
 typedef struct Player
 {
-    float width;
-    float height;
     float atAngle;
-    bool isMoving;
+    PlayerState state;
+    PlayerState prevState;
 } Player;
 
 typedef struct Tree
@@ -47,7 +51,6 @@ typedef struct Cloud
 
 typedef struct Floor
 {
-    float radius;
     int totalRocks;
     int *pointsPerRock;
     float *boundingRadiusPerRock;
@@ -55,17 +58,7 @@ typedef struct Floor
     Vector2 *rockPoints;
 } Floor;
 
-typedef struct World
-{
-    Player player;
-    Floor floor;
-    Tree *trees;
-    int treesCount;
-    Cloud *clouds;
-    int cloudsCount;
-} World;
-
-typedef struct WorldParams
+typedef struct WorldConfig
 {
     float floorRadius;
     int treeCount;
@@ -78,11 +71,11 @@ typedef struct WorldParams
     int totalRocks;
     int rockPointsRange[2];
     float rockRadiusRange[2];
-} WorldParams;
+} WorldConfig;
 
 typedef enum
 {
-    EASE_LINEAR=0,
+    EASE_LINEAR = 0,
     EASE_SINE_IN,
     EASE_SINE_OUT,
     EASE_CIRCULAR_IN,
@@ -93,11 +86,10 @@ typedef enum
     EASE_QUADRATIC_OUT,
     EASE_EXPONENTIAL_IN,
     EASE_EXPONENTIAL_OUT,
-    
+
 } EaseType;
 
-
-typedef struct CameraParams
+typedef struct CameraConfig
 {
     float angleShowAtRest;
     float angleShowWhileMoving;
@@ -107,69 +99,145 @@ typedef struct CameraParams
     EaseType moveToRestEase;
     float restToMoveDuration;
     float moveToRestDuration;
+    Vector2 offset;
 
-} CameraParams;
+} CameraConfig;
 
-typedef struct GameplayParams
+typedef struct GameplayConfig
 {
-    float moveBySpeed;
-    float cameraLerpSpeed;
-    float targetCameraYOffsetMax;
-    float arcToShowAtRest;
-    float arcToShowWhileMoving;
-    float frameCounter;
-    float frameDuratinForZoomIn;
-    float frameDuratinForZoomOut;
-} GameplayParams;
+    float speedInDegreesPerSecond;
+} GameplayConfig;
 
-typedef struct DebugParams
+typedef struct EditorConfig
 {
     bool showDemoWindow;
     bool showAngleValues;
-    float arcToShow;
-} DebugParams;
+} EditorConfig;
+
+typedef struct ContorlsConfig
+{
+    float maxDurationForQuickTap;
+} ContorlsConfig;
+
+typedef struct PlayerConfig
+{
+    float width;
+    float height;
+} PlayerConfig;
+
+typedef struct Config
+{
+    WorldConfig world;
+    CameraConfig camera;
+    GameplayConfig gameplay;
+    EditorConfig editor;
+    ContorlsConfig controls;
+    PlayerConfig player;
+} Config;
+
+typedef struct World
+{
+    Player player;
+    Floor floor;
+    Tree *trees;
+    int treesCount;
+    Cloud *clouds;
+    int cloudsCount;
+} World;
+
+
+typedef struct Hud
+{
+} Hud;
+
+typedef struct Display
+{
+    int width;
+    int height;
+    Camera2D camera;
+    Camera2D worldCamera;
+    float chordLengthAtRest;
+    float chordLengthWhileMoving;
+    Hud hud;
+} Display;
+
+typedef struct Game
+{
+    Config config;
+    World world;
+    Display display;
+} Game;
 
 #pragma endregion
 
-#pragma region Game Generation Functions
+Game game;
 
-void InitWorldParams(WorldParams *params)
+void InitGame(Game *game, int width, int height);
+void FreeGame(Game *game);
+void UpdateDrawFrame(void);
+
+int main(void)
 {
-    params->floorRadius = 900;
-    params->treeCount = 20;
-    params->treeWidth[0] = 10;
-    params->treeWidth[1] = 30;
-    params->treeHeight[0] = 50;
-    params->treeHeight[1] = 150;
-    params->cloudCount = 50;
-    params->cloudWidth[0] = 50;
-    params->cloudWidth[1] = 150;
-    params->cloudHeight[0] = 20;
-    params->cloudHeight[1] = 60;
-    params->cloudFloatingHeight[0] = 50;
-    params->cloudFloatingHeight[1] = 150;
-    params->totalRocks = 60;
-    params->rockPointsRange[0] = 5;
-    params->rockPointsRange[1] = 15;
-    params->rockRadiusRange[0] = 5;
-    params->rockRadiusRange[1] = 20;
+
+    int width, height;
+#ifdef PLATFORM_WEB
+    width = emscripten_run_script_int("window.innerWidth");
+    height = emscripten_run_script_int("window.innerHeight");
+#else
+    width = 16 * 90;
+    height = 9 * 90;
+#endif
+
+    srand(time(NULL));
+    InitGame(&game, width, height);
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    InitWindow(width, height, "Walk");
+    
+
+#if defined(PLATFORM_WEB)
+    emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
+#else
+    rlImGuiSetup(false); // sets up ImGui with ether a dark or light default theme
+    SetTargetFPS(60); // Set our game to run at 60 frames-per-second
+
+    while (!WindowShouldClose()) // Detect window close button or ESC key
+    {
+        UpdateDrawFrame();
+    }
+#endif
+
+#ifdef PLATFORM_DESKTOP
+    rlImGuiShutdown(); // cleans up ImGui
+#endif
+    CloseWindow();
+
+    FreeGame(&game);
+    return 0;
 }
 
-void GenerateTrees(World *world, WorldParams params)
+
+#pragma region Game Generation Functions
+
+
+void GenerateTrees(Game *game)
 {
+    World *world = &game->world;
+    WorldConfig params = game->config.world;
     world->treesCount = params.treeCount;
     world->trees = (Tree *)malloc(world->treesCount * sizeof(Tree));
     for (int i = 0; i < world->treesCount; i++)
     {
         world->trees[i].width = randomFloat(params.treeWidth[0], params.treeWidth[1]);
         world->trees[i].height = randomFloat(params.treeHeight[0], params.treeHeight[1]);
-        world->trees[i].atAngle = (2 * PI) / world->treesCount * i;
+        world->trees[i].atAngle = 360 / world->treesCount * i;
         world->trees[i].treeType = rand() % 3; // Assuming 3 types of trees
     }
 }
 
-void GenerateClouds(World *world, WorldParams params)
+void GenerateClouds(Game *game)
 {
+    World *world = &game->world;
+    WorldConfig params = game->config.world;
     world->cloudsCount = params.cloudCount;
     world->clouds = (Cloud *)malloc(world->cloudsCount * sizeof(Cloud));
     for (int i = 0; i < world->cloudsCount; i++)
@@ -177,14 +245,16 @@ void GenerateClouds(World *world, WorldParams params)
         world->clouds[i].width = randomFloat(params.cloudWidth[0], params.cloudWidth[1]);
         world->clouds[i].height = randomFloat(params.cloudHeight[0], params.cloudHeight[1]);
         world->clouds[i].floatingHeight = randomFloat(params.cloudFloatingHeight[0], params.cloudFloatingHeight[1]);
-        world->clouds[i].atAngle = (2 * PI) / world->cloudsCount * i;
+        world->clouds[i].atAngle = 360 / world->cloudsCount * i;
         world->clouds[i].cloudType = rand() % 3; // Assuming 3 types of clouds
     }
 }
 
-void GenerateRocks(World *world, WorldParams params)
+void GenerateRocks(Game *game)
 {
-    world->floor.totalRocks = params.treeCount;
+    World *world = &game->world;
+    WorldConfig params = game->config.world;
+    world->floor.totalRocks = params.totalRocks;
     world->floor.pointsPerRock = (int *)malloc(params.totalRocks * sizeof(int));
     world->floor.boundingRadiusPerRock = (float *)malloc(params.totalRocks * sizeof(float));
     int totalPoints = 0;
@@ -220,7 +290,7 @@ void GenerateRocks(World *world, WorldParams params)
     world->floor.rockCenters = (Vector2 *)malloc(params.totalRocks * sizeof(Vector2));
     for (int i = 0; i < params.totalRocks; i++)
     {
-        float rockAtRadius = world->floor.radius - world->floor.boundingRadiusPerRock[i] - 10; // 10 is just an extra offset to make sure rocks dont intersect with the world border
+        float rockAtRadius = params.floorRadius - world->floor.boundingRadiusPerRock[i] - 10; // 10 is just an extra offset to make sure rocks dont intersect with the world border
         rockAtRadius = rockAtRadius * randomFloat(0.9f, 1.0f);                                 // add some noise to the radius of the rock to make it look more natural
         float gapAngle = (2 * PI) / params.totalRocks;
         gapAngle = gapAngle * randomFloat(0.95f, 1.0f); // add some noise to the angle between rocks to make it look more natural
@@ -238,495 +308,256 @@ void GenerateRocks(World *world, WorldParams params)
     }
 }
 
-void GenerateWorld(World *world, WorldParams params)
+void GenerateWorld(Game *game)
 {
-    world->player.width = 20;
-    world->player.height = 40;
-    world->player.atAngle = 0;
-    world->player.isMoving = false;
-
-    world->floor.radius = params.floorRadius;
-    GenerateTrees(world, params);
-    GenerateClouds(world, params);
-    GenerateRocks(world, params);
+    GenerateTrees(game);
+    GenerateClouds(game);
+    GenerateRocks(game);
 }
 
-void freeWorld(World *world)
+void FreeGame(Game *game)
 {
-    free(world->floor.rockPoints);
-    free(world->floor.pointsPerRock);
-    free(world->floor.boundingRadiusPerRock);
-    free(world->trees);
-    free(world->clouds);
+    World world = game->world;
+    free(world.floor.rockPoints);
+    free(world.floor.pointsPerRock);
+    free(world.floor.boundingRadiusPerRock);
+    free(world.trees);
+    free(world.clouds);
 }
 
 #pragma endregion
 
-#pragma region Hud Definitions
 
-typedef struct Screen
+void InitGame(Game *game, int width, int height)
 {
-    int width;
-    int height;
-} Screen;
+    #pragma region Config
+    
+    
+    game->config.world.floorRadius = 900;
+    game->config.world.treeCount = 20;
+    game->config.world.treeWidth[0] = 10;
+    game->config.world.treeWidth[1] = 30;
+    game->config.world.treeHeight[0] = 50;
+    game->config.world.treeHeight[1] = 150;
+    game->config.world.cloudCount = 50;
+    game->config.world.cloudWidth[0] = 50;
+    game->config.world.cloudWidth[1] = 150;
+    game->config.world.cloudHeight[0] = 20;
+    game->config.world.cloudHeight[1] = 60;
+    game->config.world.cloudFloatingHeight[0] = 50;
+    game->config.world.cloudFloatingHeight[1] = 150;
+    game->config.world.totalRocks = 60;
+    game->config.world.rockPointsRange[0] = 5;
+    game->config.world.rockPointsRange[1] = 15;
+    game->config.world.rockRadiusRange[0] = 5;
+    game->config.world.rockRadiusRange[1] = 20;
 
-typedef struct MyCamera
-{
-    Camera2D playerCamera;
-    Camera2D worldCamera;
-    Camera2D *activeCamera;
-    float currentCameraYOffset;
-    float targetCameraYOffset;
-    float targetZoom;
-    float startZoom;
-} MyCamera;
+    game->config.camera.angleShowAtRest = 60;
+    game->config.camera.angleShowWhileMoving = 20;
+    game->config.camera.angleOffPlayerAtRest = 0;
+    game->config.camera.angleOffPlayerWhileMoving = 0;
+    game->config.camera.restToMoveEase = EASE_CUBIC_OUT;
+    game->config.camera.moveToRestEase = EASE_SINE_IN;
+    game->config.camera.restToMoveDuration = 60.0f;
+    game->config.camera.moveToRestDuration = 6 * 60.0f;
+    game->config.camera.offset = (Vector2){0.5f, 0.6f};
 
-#pragma endregion
+    game->config.gameplay.speedInDegreesPerSecond = 360.0f / (120);
 
-World world = {0};
-WorldParams params = {0};
-Screen screen = {0};
-MyCamera myCamera = {
-    .playerCamera = {.zoom = 2.0f},
-    .worldCamera = {.zoom = 0.9f},
-};
+    game->config.editor.showDemoWindow = false;
+    game->config.editor.showAngleValues = true;
 
+    game->config.controls.maxDurationForQuickTap = 0.2f;
 
+    game->config.player.width = 20;
+    game->config.player.height = 40;
 
-GameplayParams gameplayParams = {
-    .cameraLerpSpeed = 0.1f,
-    .targetCameraYOffsetMax = 50.0f,
-    .moveBySpeed = 2 * PI / (120 * 60),
-    .arcToShowAtRest = 60.0f,
-    .arcToShowWhileMoving = 20.0f,
-    .frameCounter = 0,
-    .frameDuratinForZoomIn = 60.0f,
-    .frameDuratinForZoomOut = 6 * 60.0f};
+    #pragma endregion
+    
+    game->display.width = width;
+    game->display.height = height;
+    GenerateWorld(game);
+    game->world.player = (Player){
+        .atAngle = 0,
+        .state = PLAYER_STATE_MOVING_RIGHT,
+        .prevState = PLAYER_STATE_IDLE
+    };
 
-DebugParams debugParams = {
-    .showDemoWindow = false,
-    .showAngleValues = true,
-    .arcToShow = 10,
-};
-
-void UpdateCameraZoom()
-{
-
-    if (myCamera.startZoom < myCamera.targetZoom)
-    {
-        if (gameplayParams.frameCounter <= gameplayParams.frameDuratinForZoomIn)
-        {
-            myCamera.playerCamera.zoom = EaseCubicOut(gameplayParams.frameCounter, myCamera.startZoom, myCamera.targetZoom - myCamera.startZoom, gameplayParams.frameDuratinForZoomIn);
-        }
-        else
-        {
-            myCamera.playerCamera.zoom = myCamera.targetZoom;
-        }
-    }
-    else
-    {
-        if (gameplayParams.frameCounter <= gameplayParams.frameDuratinForZoomOut)
-        {
-            myCamera.playerCamera.zoom = EaseSineIn(gameplayParams.frameCounter, myCamera.startZoom, myCamera.targetZoom - myCamera.startZoom, gameplayParams.frameDuratinForZoomOut);
-        }
-        else
-        {
-            myCamera.playerCamera.zoom = myCamera.targetZoom;
-        }
-    }
-}
-void StartZooming()
-{
-    TraceLog(LOG_INFO, "StartZooming called. player is moving: %i", world.player.isMoving);
-    float targetArc = world.player.isMoving ? gameplayParams.arcToShowWhileMoving : gameplayParams.arcToShowAtRest;
-    myCamera.startZoom = myCamera.playerCamera.zoom;
-    myCamera.targetZoom = screen.width / (world.floor.radius * cosf(DEG2RAD * (90 - targetArc / 2)) * 2);
-    gameplayParams.frameCounter = 0;
+    game->display.chordLengthWhileMoving = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowWhileMoving / 2));
+    game->display.chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
+    game->display.camera = (Camera2D){
+        .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
+        .target = (Vector2){0, 0},
+        .rotation = 0,
+        .zoom = width / (game->world.player.state == PLAYER_STATE_IDLE ? game->display.chordLengthAtRest : game->display.chordLengthWhileMoving)
+    };
+    game->display.worldCamera = (Camera2D){
+        .offset = {width * 0.5f, height * 0.5f},
+        .target = (Vector2){0, 0},
+        .rotation = 0,
+        .zoom = width / ( game->config.world.floorRadius * 5.0f)
+    };
+    TraceLog(LOG_INFO, "Camera zoom: %f", game->display.camera.zoom);
+    TraceLog(LOG_INFO, "Camera offset: %f, %f", game->display.camera.offset.x, game->display.camera.offset.y);
+    
 }
 
 void UpdateDrawFrame(void)
 {
 
-    gameplayParams.frameCounter += 1;
-    UpdateCameraZoom();
+    Player *player = &game.world.player;
+    Config config = game.config;
+    float deltaTime = GetFrameTime();
+    //Process Input
+    {
+        
+        if (IsKeyDown(KEY_SPACE))
+        {
+            if (player->state != PLAYER_STATE_IDLE) {
+                player->prevState = player->state;
+            }
+                
+            player->state = PLAYER_STATE_IDLE;
+        }
+        else {
+            if (player->state == PLAYER_STATE_IDLE)
+            {
+                PlayerState prevState = player->prevState;
+                player->prevState = player->state;
+                player->state = prevState;
+            } else {
+                if (IsKeyPressed(KEY_LEFT_SHIFT)) {
+                    player->prevState = player->state;
+                    player->state = player->state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
+                }
+            }
+        }
+        
+    }
+    //Tick
+    {
+        
+        float speed = config.gameplay.speedInDegreesPerSecond * deltaTime;
+        if (player->state == PLAYER_STATE_MOVING_LEFT)
+        {
+            player->atAngle -= speed;
+        }
+        else if (player->state == PLAYER_STATE_MOVING_RIGHT)
+        {
+            player->atAngle += speed;
+        }
+        
+    }
+
+    //Render
     {
         BeginDrawing();
 
 #ifdef PLATFORM_DESKTOP
         rlImGuiBegin(); // starts the ImGui content mode. Make all ImGui calls after this
+        ImGui_ShowDemoWindow(&game.config.editor.showDemoWindow);
 #endif
         ClearBackground(WHITE);
 
-#pragma region ImGui in HUD
-        // #ifdef PLATFORM_DESKTOP
-        ImGui_ShowDemoWindow(&debugParams.showDemoWindow);
-
-        ImGui_Begin("Render", NULL, 0);
-        ImGui_Text("FPS: %i", GetFPS());
-
-        ImGui_Checkbox("Show Demo Window", &debugParams.showDemoWindow);
-        ImGui_Checkbox("Show Angle Values", &debugParams.showAngleValues);
-        ImGui_SliderFloat("Camera Lerp Speed", &gameplayParams.cameraLerpSpeed, 0.01f, 0.1f);
-
-        int arcChanged = ImGui_SliderFloat("Arc To Show", &debugParams.arcToShow, 1.0f, 60.0f);
-        if (arcChanged)
-        {
-            float angle = DEG2RAD * (90 - debugParams.arcToShow / 2.0f);
-            myCamera.playerCamera.zoom = screen.width / (world.floor.radius * cosf(angle) * 2);
-        }
-        ImGui_End();
-        // #endif
-
-#pragma endregion
-
-#pragma region Walk Buttons
-        int walkButtonWidth = 200;
-        int buttonOffset = 20;
-        int buttonYOff = screen.height - walkButtonWidth - buttonOffset * 2;
-        Color buttonUnpressedColor = GRAY;
-        Color buttonPressedColor = BLACK;
-        Color currentColor = buttonUnpressedColor;
-        int cameraButtonWidth = 180;
-
-        Vector2 leftBtnCenter = (Vector2){walkButtonWidth / 2 + buttonOffset, buttonYOff + walkButtonWidth / 2 + buttonOffset};
-        float moveAngleBy = 0;
-        if (IsKeyDown(KEY_LEFT) ||
-            (CheckCollisionPointCircle(GetMousePosition(), leftBtnCenter, walkButtonWidth / 2) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)))
-        {
-            moveAngleBy = gameplayParams.moveBySpeed;
-            currentColor = buttonPressedColor;
-        }
-        else
-        {
-            currentColor = buttonUnpressedColor;
-        }
-        DrawRing(
-            leftBtnCenter,
-            walkButtonWidth / 2 - 5, walkButtonWidth / 2, 0, 360, 36, currentColor);
-        DrawPoly(leftBtnCenter, 3, walkButtonWidth / 2 - 40, 180, currentColor);
-
-        Vector2 rightBtnCenter = (Vector2){screen.width - walkButtonWidth / 2 - buttonOffset, buttonYOff + walkButtonWidth / 2 + buttonOffset};
-        if (IsKeyDown(KEY_RIGHT) ||
-            (CheckCollisionPointCircle(GetMousePosition(), rightBtnCenter, walkButtonWidth / 2) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)))
-        {
-            moveAngleBy = -gameplayParams.moveBySpeed;
-            currentColor = buttonPressedColor;
-        }
-        else
-        {
-            currentColor = buttonUnpressedColor;
-        }
-        DrawRing(
-            rightBtnCenter,
-            walkButtonWidth / 2 - 5, walkButtonWidth / 2, 0, 360, 36, currentColor);
-        DrawPoly(rightBtnCenter, 3, walkButtonWidth / 2 - 40, 0, currentColor);
-
-        bool wasMoving = world.player.isMoving;
-
-        world.player.atAngle += moveAngleBy;
-        world.player.isMoving = moveAngleBy != 0;
-
-        if (wasMoving && moveAngleBy == 0)
-        {
-            StartZooming();
-        }
-        if (!wasMoving && moveAngleBy != 0)
-        {
-            StartZooming();
-        }
-
-#pragma endregion
-#pragma region Camera Buttons
-        if (!world.player.isMoving)
-        {
-            int lineThick = 5;
-            int ringInner = walkButtonWidth / 2 + 8;
-            int ringOuter = ringInner + lineThick;
-            float ringCenter = walkButtonWidth / 2 + 10;
-
-            Vector2 lUpTopLeft = (Vector2){
-                leftBtnCenter.x + ringCenter * cosf(DEG2RAD * -60),
-                leftBtnCenter.y + ringCenter * sinf(DEG2RAD * -60)};
-            Vector2 lUpBtmLeft = (Vector2){
-                leftBtnCenter.x + ringCenter * cosf(DEG2RAD * -5),
-                leftBtnCenter.y + ringCenter * sinf(DEG2RAD * -5)};
-            Vector2 lUpBtmRight = (Vector2){
-                leftBtnCenter.x + ringCenter * cosf(DEG2RAD * -5) + cameraButtonWidth,
-                leftBtnCenter.y + ringCenter * sinf(DEG2RAD * -5)};
-            Vector2 lUpTopRight = (Vector2){
-                leftBtnCenter.x + ringCenter * cosf(DEG2RAD * -5) + cameraButtonWidth,
-                leftBtnCenter.y + ringCenter * sinf(DEG2RAD * -60)};
-            Vector2 lUpCenter = Vector2Scale(Vector2Add(lUpBtmLeft, lUpTopRight), 0.5f);
-            Vector2 lUpPoints[4] = {lUpBtmLeft, lUpBtmRight, lUpTopRight, lUpTopLeft};
-
-            Vector2 lDownTopLeft = (Vector2){
-                leftBtnCenter.x + ringCenter * cosf(DEG2RAD * 60),
-                leftBtnCenter.y + ringCenter * sinf(DEG2RAD * 60)};
-            Vector2 lDownBtmLeft = (Vector2){
-                leftBtnCenter.x + ringCenter * cosf(DEG2RAD * 5),
-                leftBtnCenter.y + ringCenter * sinf(DEG2RAD * 5)};
-            Vector2 lDownBtmRight = (Vector2){
-                leftBtnCenter.x + ringCenter * cosf(DEG2RAD * 5) + cameraButtonWidth,
-                leftBtnCenter.y + ringCenter * sinf(DEG2RAD * 5)};
-            Vector2 lDownTopRight = (Vector2){
-                leftBtnCenter.x + ringCenter * cosf(DEG2RAD * 5) + cameraButtonWidth,
-                leftBtnCenter.y + ringCenter * sinf(DEG2RAD * 60)};
-            Vector2 lDownCenter = Vector2Scale(Vector2Add(lDownBtmLeft, lDownTopRight), 0.5f);
-            Vector2 lDownPoints[4] = {lDownBtmLeft, lDownBtmRight, lDownTopRight, lDownTopLeft};
-
-            Vector2 rUpTopLeft = (Vector2){
-                rightBtnCenter.x + ringCenter * cosf(DEG2RAD * (60 + 180)),
-                rightBtnCenter.y + ringCenter * sinf(DEG2RAD * (60 + 180))};
-            Vector2 rUpBtmLeft = (Vector2){
-                rightBtnCenter.x + ringCenter * cosf(DEG2RAD * (5 + 180)),
-                rightBtnCenter.y + ringCenter * sinf(DEG2RAD * (5 + 180))};
-            Vector2 rUpBtmRight = (Vector2){
-                rightBtnCenter.x + ringCenter * cosf(DEG2RAD * (5 + 180)) - cameraButtonWidth,
-                rightBtnCenter.y + ringCenter * sinf(DEG2RAD * (5 + 180))};
-            Vector2 rUpTopRight = (Vector2){
-                rightBtnCenter.x + ringCenter * cosf(DEG2RAD * (5 + 180)) - cameraButtonWidth,
-                rightBtnCenter.y + ringCenter * sinf(DEG2RAD * (60 + 180))};
-            Vector2 rUpCenter = Vector2Scale(Vector2Add(rUpBtmLeft, rUpTopRight), 0.5f);
-            Vector2 rUpPoints[4] = {rUpBtmLeft, rUpBtmRight, rUpTopRight, rUpTopLeft};
-
-            Vector2 rDownTopLeft = (Vector2){
-                rightBtnCenter.x + ringCenter * cosf(DEG2RAD * (-60 + 180)),
-                rightBtnCenter.y + ringCenter * sinf(DEG2RAD * (-60 + 180))};
-            Vector2 rDownBtmLeft = (Vector2){
-                rightBtnCenter.x + ringCenter * cosf(DEG2RAD * (-5 + 180)),
-                rightBtnCenter.y + ringCenter * sinf(DEG2RAD * (-5 + 180))};
-            Vector2 rDownBtmRight = (Vector2){
-                rightBtnCenter.x + ringCenter * cosf(DEG2RAD * (-5 + 180)) - cameraButtonWidth,
-                rightBtnCenter.y + ringCenter * sinf(DEG2RAD * (-5 + 180))};
-            Vector2 rDownTopRight = (Vector2){
-                rightBtnCenter.x + ringCenter * cosf(DEG2RAD * (-5 + 180)) - cameraButtonWidth,
-                rightBtnCenter.y + ringCenter * sinf(DEG2RAD * (-60 + 180))};
-            Vector2 rDownCenter = Vector2Scale(Vector2Add(rDownBtmLeft, rDownTopRight), 0.5f);
-            Vector2 rDownPoints[4] = {rDownBtmLeft, rDownBtmRight, rDownTopRight, rDownTopLeft};
-
-            Color upButtonColor = buttonUnpressedColor;
-            Color downButtonColor = buttonUnpressedColor;
-            if (IsKeyDown(KEY_DOWN) ||
-                (CheckCollisionPointPoly(GetMousePosition(), rDownPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) ||
-                (CheckCollisionPointPoly(GetMousePosition(), lDownPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)))
-            {
-                myCamera.targetCameraYOffset = -gameplayParams.targetCameraYOffsetMax;
-                downButtonColor = buttonPressedColor;
-            }
-            else if (IsKeyDown(KEY_UP) ||
-                     (CheckCollisionPointPoly(GetMousePosition(), rUpPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) ||
-                     (CheckCollisionPointPoly(GetMousePosition(), lUpPoints, 4) && IsMouseButtonDown(MOUSE_LEFT_BUTTON)))
-            {
-                myCamera.targetCameraYOffset = gameplayParams.targetCameraYOffsetMax;
-                upButtonColor = buttonPressedColor;
-            }
-            else
-            {
-                myCamera.targetCameraYOffset = 0;
-            }
-
-            DrawRing((Vector2){leftBtnCenter.x, leftBtnCenter.y}, ringInner, ringOuter, -60, -5, 12, upButtonColor);
-            DrawLineEx(lUpBtmLeft, lUpBtmRight, 5, upButtonColor);
-            DrawLineEx(lUpBtmRight, lUpTopRight, 5, upButtonColor);
-            DrawLineEx(lUpTopRight, lUpTopLeft, 5, upButtonColor);
-            DrawPoly(lUpCenter, 3, 30, -90, upButtonColor);
-
-            DrawRing((Vector2){leftBtnCenter.x, leftBtnCenter.y}, ringInner, ringOuter, 5, 60, 12, downButtonColor);
-            DrawLineEx(lDownBtmLeft, lDownBtmRight, 5, downButtonColor);
-            DrawLineEx(lDownBtmRight, lDownTopRight, 5, downButtonColor);
-            DrawLineEx(lDownTopRight, lDownTopLeft, 5, downButtonColor);
-            DrawPoly(lDownCenter, 3, 30, 90, downButtonColor);
-
-            DrawRing((Vector2){rightBtnCenter.x, rightBtnCenter.y}, ringInner, ringOuter, 5 + 180, 60 + 180, 12, upButtonColor);
-            DrawLineEx(rUpBtmLeft, rUpBtmRight, 5, upButtonColor);
-            DrawLineEx(rUpBtmRight, rUpTopRight, 5, upButtonColor);
-            DrawLineEx(rUpTopRight, rUpTopLeft, 5, upButtonColor);
-            DrawPoly(rUpCenter, 3, 30, -90, upButtonColor);
-
-            DrawRing((Vector2){rightBtnCenter.x, rightBtnCenter.y}, ringInner, ringOuter, -5 + 180, -60 + 180, 12, downButtonColor);
-            DrawLineEx(rDownBtmLeft, rDownBtmRight, 5, downButtonColor);
-            DrawLineEx(rDownBtmRight, rDownTopRight, 5, downButtonColor);
-            DrawLineEx(rDownTopRight, rDownTopLeft, 5, downButtonColor);
-            DrawPoly(rDownCenter, 3, 30, 90, downButtonColor);
-        }
-#pragma endregion
-
-        myCamera.playerCamera.target = (Vector2){
-            -world.floor.radius * cosf(world.player.atAngle),
-            world.floor.radius * sinf(world.player.atAngle)};
-        myCamera.playerCamera.rotation = 90 + (world.player.atAngle * RAD2DEG);
-        myCamera.currentCameraYOffset = Lerp(myCamera.currentCameraYOffset, myCamera.targetCameraYOffset, gameplayParams.cameraLerpSpeed);
-        myCamera.playerCamera.offset.y = screen.height * 0.6f + myCamera.currentCameraYOffset;
-
 #pragma region Render World
 
-        BeginMode2D(*myCamera.activeCamera);
-        // Draw Floor
-        DrawRing((Vector2){0, 0}, world.floor.radius - 3, world.floor.radius, 0, 360, 360, BLACK);
-
-        if (debugParams.showAngleValues)
+        if (IsKeyDown(KEY_W)) {
+            BeginMode2D(game.display.worldCamera);
+        } else {
+            BeginMode2D(game.display.camera);
+        }
+        
+        float floorRadius = config.world.floorRadius;
+        float playerAngleInRad = player->atAngle * DEG2RAD;
+        
+        // Draw Player
         {
-            for (int i = 0; i < 360; i += 10)
+            DrawRectanglePro(
+                (Rectangle){
+                    floorRadius * sinf(playerAngleInRad),
+                    -floorRadius * cosf(playerAngleInRad),
+                    config.player.width, config.player.height},
+                (Vector2){config.player.width / 2, 0},
+                (180 + player->atAngle),
+                BLACK);
+            
+            game.display.camera.target.x = floorRadius * sinf(playerAngleInRad);
+            game.display.camera.target.y = -floorRadius * cosf(playerAngleInRad);
+            game.display.camera.zoom = game.display.width / (player->state == PLAYER_STATE_IDLE ? game.display.chordLengthAtRest : game.display.chordLengthWhileMoving);
+            game.display.camera.rotation = -player->atAngle;
+        }
+
+        // Draw Floor
+        DrawRing((Vector2){0, 0}, floorRadius - 5, floorRadius-1, 0, 360, 360, BLACK);
+
+        if (config.editor.showAngleValues)
+        {
+            for (int i = 0; i < 360; i += 5)
             {
                 float angleRad = i * DEG2RAD;
                 Vector2 pos = (Vector2){
-                    -(world.floor.radius + 15) * cosf(angleRad),
-                    (world.floor.radius + 15) * sinf(angleRad)};
+                    (floorRadius + 15) * sinf(angleRad),
+                    -(floorRadius + 15) * cosf(angleRad)};
                 DrawText(TextFormat("%i", i), pos.x - 10, pos.y - 10, 10, DARKGRAY);
             }
         }
 
         int pointsDrawn = 0;
-        for (int i = 0; i < world.floor.totalRocks; i++)
+        for (int i = 0; i < game.world.floor.totalRocks; i++)
         {
-            for (size_t j = 0; j < world.floor.pointsPerRock[i]; j++)
+            for (size_t j = 0; j < game.world.floor.pointsPerRock[i]; j++)
             {
-                Vector2 p0 = world.floor.rockPoints[pointsDrawn + j];
-                Vector2 p1 = world.floor.rockPoints[pointsDrawn + (j + 1) % world.floor.pointsPerRock[i]];
+                Vector2 p0 = game.world.floor.rockPoints[pointsDrawn + j];
+                Vector2 p1 = game.world.floor.rockPoints[pointsDrawn + (j + 1) % game.world.floor.pointsPerRock[i]];
                 DrawLineEx(p0, p1, 1, GRAY);
                 DrawCircleV(p0, 0.4f, GRAY);
             }
 
             // Close the polygon with circle at last vertex too (from j loop it already draws p0 for last edge)
-            pointsDrawn += world.floor.pointsPerRock[i];
+            pointsDrawn += game.world.floor.pointsPerRock[i];
         }
 
         // Draw Trees
-        for (int i = 0; i < world.treesCount; i++)
+        for (int i = 0; i < game.world.treesCount; i++)
         {
-            Tree *trees = world.trees;
-            float treeX = -world.floor.radius * cosf(trees[i].atAngle);
-            float treeY = world.floor.radius * sinf(trees[i].atAngle);
-
-            // DrawRectanglePro(
-            //     (Rectangle){treeX, treeY, -trees[i].width, -trees[i].height},
-            //     (Vector2){-trees[i].width / 2, 0},
-            //     ((-PI / 2) - trees[i].atAngle) * RAD2DEG,
-            //     BLACK);
+            Tree *trees = game.world.trees;
+            float treeX = floorRadius * sinf(trees[i].atAngle * DEG2RAD);
+            float treeY = -floorRadius * cosf(trees[i].atAngle * DEG2RAD);
 
             DrawLineEx(
                 (Vector2){treeX, treeY},
-                (Vector2){treeX - trees[i].height * cosf(trees[i].atAngle), treeY + trees[i].height * sinf(trees[i].atAngle)},
+                (Vector2){treeX + trees[i].height * sinf(trees[i].atAngle * DEG2RAD), treeY - trees[i].height * cosf(trees[i].atAngle * DEG2RAD)},
                 2,
                 DARKGREEN);
         }
 
         // Draw Clouds
-        for (int i = 0; i < world.cloudsCount; i++)
+        for (int i = 0; i < game.world.cloudsCount; i++)
         {
-            Cloud *clouds = world.clouds;
-            float radius = world.floor.radius + clouds[i].floatingHeight;
-            float cloudX = -radius * cosf(clouds[i].atAngle);
-            float cloudY = radius * sinf(clouds[i].atAngle);
+            Cloud *clouds = game.world.clouds;
+            float radius = floorRadius + clouds[i].floatingHeight;
+            float cloudX = radius * sinf(clouds[i].atAngle * DEG2RAD);
+            float cloudY = -radius * cosf(clouds[i].atAngle * DEG2RAD);
 
             DrawRectanglePro(
-                (Rectangle){cloudX, cloudY, -clouds[i].width, -clouds[i].height},
-                (Vector2){-clouds[i].width / 2, 0},
-                ((-PI / 2) - clouds[i].atAngle) * RAD2DEG,
+                (Rectangle){cloudX, cloudY, clouds[i].width, clouds[i].height},
+                (Vector2){clouds[i].width / 2, 0},
+                (clouds[i].atAngle) ,
                 (Color){130, 130, 130, 55});
         }
 
-        // Draw Player
-        {
-            DrawRectanglePro(
-                (Rectangle){
-                    -world.floor.radius * cosf(world.player.atAngle),
-                    world.floor.radius * sinf(world.player.atAngle),
-                    -world.player.width, -world.player.height},
-                (Vector2){-world.player.width / 2, 0},
-                ((-PI / 2) - world.player.atAngle) * RAD2DEG,
-                BLACK);
-        }
+        
 
         EndMode2D();
 #pragma endregion
 
-#pragma region Process Input
-
-        if (IsKeyPressed(KEY_TAB))
-        {
-            myCamera.activeCamera = myCamera.activeCamera == &myCamera.playerCamera ? &myCamera.worldCamera : &myCamera.playerCamera;
-        }
-
-#pragma endregion
 
 #ifdef PLATFORM_DESKTOP
         rlImGuiEnd(); // ends the ImGui content mode. Make all ImGui calls before this
 #endif
         EndDrawing();
     }
+    
+    
 }
 
-void UpdatePortraitFrame(void)
-{
-    DrawText("Please rotate your device to landscape mode", screen.width / 2 - 150, screen.height / 2, 20, BLACK);
-}
-
-int main(void)
-{
-
-#ifdef PLATFORM_WEB
-
-    int width = emscripten_run_script_int("window.innerWidth");
-    int height = emscripten_run_script_int("window.innerHeight");
-#else
-    int width = 16 * 90;
-    int height = 9 * 90;
-#endif
-
-    srand(time(NULL));
-    InitWorldParams(&params);
-    GenerateWorld(&world, params);
-
-    TraceLog(LOG_INFO, "Screen Width: %i, Screen Height: %i", width, height);
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-    InitWindow(width, height, "Walk");
-    screen.width = GetScreenWidth();
-    screen.height = GetScreenHeight();
-
-    myCamera.playerCamera.target = (Vector2){0, 0};
-    myCamera.playerCamera.offset = (Vector2){screen.width / 2, screen.height / 2};
-    myCamera.targetZoom = screen.width / (world.floor.radius * (PI / 4));
-    myCamera.startZoom = myCamera.playerCamera.zoom;
-
-    myCamera.worldCamera.rotation = 0;
-    myCamera.worldCamera.target = (Vector2){0, 0};
-    myCamera.worldCamera.offset = (Vector2){screen.width / 2, screen.height / 2};
-    myCamera.worldCamera.zoom = (screen.height) / (world.floor.radius * 2 + 2 * params.cloudFloatingHeight[1] + 100);
-
-    myCamera.activeCamera = &myCamera.playerCamera;
-
-#ifdef PLATFORM_DESKTOP
-    rlImGuiSetup(false); // sets up ImGui with ether a dark or light default theme
-#endif
-
-#if defined(PLATFORM_WEB)
-    emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
-#else
-    SetTargetFPS(60); // Set our game to run at 60 frames-per-second
-
-    while (!WindowShouldClose()) // Detect window close button or ESC key
-    {
-        if (IsWindowResized())
-        {
-            screen.width = GetScreenWidth();
-            screen.height = GetScreenHeight();
-
-            // TODO: Verify this implementation
-            myCamera.playerCamera.offset = (Vector2){screen.width / 2, screen.height / 2};
-            myCamera.playerCamera.zoom = screen.width / (world.floor.radius * (PI / 4));
-            myCamera.worldCamera.offset = (Vector2){screen.width / 2, screen.height / 2};
-            myCamera.worldCamera.zoom = (screen.height) / (world.floor.radius * 2 + 2 * params.cloudFloatingHeight[1] + 100);
-        }
-        UpdateDrawFrame();
-    }
-#endif
-
-#ifdef PLATFORM_DESKTOP
-    rlImGuiShutdown(); // cleans up ImGui
-#endif
-    CloseWindow();
-
-    freeWorld(&world);
-    return 0;
-}
