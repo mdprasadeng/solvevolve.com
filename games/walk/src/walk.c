@@ -80,6 +80,36 @@ typedef struct WorldParams
     float rockRadiusRange[2];
 } WorldParams;
 
+typedef enum
+{
+    EASE_LINEAR=0,
+    EASE_SINE_IN,
+    EASE_SINE_OUT,
+    EASE_CIRCULAR_IN,
+    EASE_CIRCULAR_OUT,
+    EASE_CUBIC_IN,
+    EASE_CUBIC_OUT,
+    EASE_QUADRATIC_IN,
+    EASE_QUADRATIC_OUT,
+    EASE_EXPONENTIAL_IN,
+    EASE_EXPONENTIAL_OUT,
+    
+} EaseType;
+
+
+typedef struct CameraParams
+{
+    float angleShowAtRest;
+    float angleShowWhileMoving;
+    float angleOffPlayerAtRest;
+    float angleOffPlayerWhileMoving;
+    EaseType restToMoveEase;
+    EaseType moveToRestEase;
+    float restToMoveDuration;
+    float moveToRestDuration;
+
+} CameraParams;
+
 typedef struct GameplayParams
 {
     float moveBySpeed;
@@ -260,6 +290,8 @@ MyCamera myCamera = {
     .playerCamera = {.zoom = 2.0f},
     .worldCamera = {.zoom = 0.9f},
 };
+
+
 
 GameplayParams gameplayParams = {
     .cameraLerpSpeed = 0.1f,

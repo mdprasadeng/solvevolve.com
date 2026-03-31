@@ -1,6 +1,5 @@
-* design for a certain aspect ratio
-    * may be just 16*9
 * figure out different zoom levels mathematically
+* add a time before rest to move and move to rest before zoomin and zoomout happen
 * change controls
 * trigger game end screen on some condition
 * game start screen
