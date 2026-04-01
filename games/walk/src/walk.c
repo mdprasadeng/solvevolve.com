@@ -162,14 +162,15 @@ typedef struct Display
     int height;
     Camera2D camera;
     Camera2D worldCamera;
-    float chordLengthAtRest;
-    float chordLengthWhileMoving;
-    float elapsedDurationToAngle;
-    float camerFromAngle;
-    float cameraToAngle;
-    float durationToAngle;
-    float cameraToZoom;
-    float durationToZoom;
+    float zoomAtRest;
+    float zoomWhileMoving;
+
+    EaseType zoomEaseType;
+    float zoomStart;
+    float zoomEnd;
+    float zoomTime;
+    float elapsedZoomTime;
+
     Hud hud;
 } Display;
 
@@ -360,15 +361,15 @@ void InitGame(Game *game, int width, int height)
     game->config.world.rockRadiusRange[0] = 5;
     game->config.world.rockRadiusRange[1] = 20;
 
-    game->config.camera.angleShowAtRest = 60;
-    game->config.camera.angleShowWhileMoving = 20;
+    game->config.camera.angleShowAtRest = 40;
+    game->config.camera.angleShowWhileMoving = 15;
     game->config.camera.dampenedAngle = 3;
-    game->config.camera.angleOffPlayerAtRest = 15;
-    game->config.camera.angleOffPlayerWhileMoving = 5;
-    game->config.camera.restToMoveEase = EASE_CUBIC_OUT;
+    game->config.camera.angleOffPlayerAtRest = 0;
+    game->config.camera.angleOffPlayerWhileMoving = 0;
+    game->config.camera.restToMoveEase = EASE_SINE_OUT;
     game->config.camera.moveToRestEase = EASE_SINE_IN;
     game->config.camera.angleMovePerSecond = 0.5f;
-    game->config.camera.restToMoveZoomDuration = 1.0f;
+    game->config.camera.restToMoveZoomDuration = 3.0f;
     game->config.camera.moveToRestZoomDuration = 5.0f;
     game->config.camera.offset = (Vector2){0.5f, 0.6f};
 
@@ -392,12 +393,16 @@ void InitGame(Game *game, int width, int height)
         .shadowAtAngle = 0,
         .state = PLAYER_STATE_MOVING_RIGHT};
 
-    game->display.chordLengthWhileMoving = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowWhileMoving / 2));
-    game->display.chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
+    float chordLengthWhileMoving = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowWhileMoving / 2));
+    float chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
+    game->display.zoomAtRest = width / chordLengthAtRest;
+    game->display.zoomWhileMoving = width / chordLengthWhileMoving;
+    game->display.zoomStart = game->display.zoomWhileMoving;
+    game->display.zoomEnd = game->display.zoomWhileMoving;
 
     game->display.camera = (Camera2D){
         .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
-        .rotation = -game->config.camera.angleOffPlayerWhileMoving};
+        .zoom = game->display.zoomWhileMoving};
 
     game->display.worldCamera = (Camera2D){
         .offset = {width * 0.5f, height * 0.5f},
@@ -416,127 +421,103 @@ void UpdateDrawFrame(void)
         switch (game.player.state)
         {
 
+        case PLAYER_STATE_MOVING_LEFT:
         case PLAYER_STATE_MOVING_RIGHT:
             if (IsKeyPressed(KEY_SPACE))
             {
-                game.player.state = PLAYER_STATE_IDLE_RIGHT;
+                game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_IDLE_LEFT : PLAYER_STATE_IDLE_RIGHT;
+                game.display.zoomEaseType = game.config.camera.moveToRestEase;
+                game.display.elapsedZoomTime = 0;
+                game.display.zoomStart = game.display.camera.zoom;
+                game.display.zoomEnd = game.display.zoomAtRest;
+                game.display.zoomTime = game.config.camera.moveToRestZoomDuration;
             }
             else if (IsKeyPressed(KEY_LEFT_SHIFT))
             {
-                game.player.state = PLAYER_STATE_MOVING_LEFT;
+                game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
             }
             else
             {
                 float speed = config.gameplay.speedInDegreesPerSecond * deltaTime;
-                game.player.atAngle += speed;
-            }
-            break;
-        case PLAYER_STATE_MOVING_LEFT:
-            if (IsKeyPressed(KEY_SPACE))
-            {
-                game.player.state = PLAYER_STATE_IDLE_LEFT;
-            }
-            else if (IsKeyPressed(KEY_LEFT_SHIFT))
-            {
-                game.player.state = PLAYER_STATE_MOVING_RIGHT;
-            }
-            else
-            {
-                float speed = config.gameplay.speedInDegreesPerSecond * deltaTime;
-                game.player.atAngle -= speed;
+                game.player.atAngle = game.player.atAngle + (game.player.state == PLAYER_STATE_MOVING_LEFT ? -speed : speed);
             }
             break;
 
+        case PLAYER_STATE_IDLE_RIGHT:
         case PLAYER_STATE_IDLE_LEFT:
             if (!IsKeyDown(KEY_SPACE))
             {
-                game.player.state = PLAYER_STATE_MOVING_LEFT;
+                game.player.state = game.player.state == PLAYER_STATE_IDLE_RIGHT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
+                game.display.zoomEaseType = game.config.camera.restToMoveEase;
+                game.display.elapsedZoomTime = 0;
+                game.display.zoomStart = game.display.camera.zoom;
+                game.display.zoomEnd = game.display.zoomWhileMoving;
+                game.display.zoomTime = game.config.camera.restToMoveZoomDuration;
             }
             break;
-        case PLAYER_STATE_IDLE_RIGHT:
-            if (!IsKeyDown(KEY_SPACE))
-            {
-                game.player.state = PLAYER_STATE_MOVING_RIGHT;
-            }
-            break;
+
         default:
             break;
         }
     }
     float cameraToAngle = game.player.atAngle;
-    switch (game.player.state)
-    {
-    case PLAYER_STATE_IDLE_LEFT:
-        cameraToAngle -= config.camera.angleOffPlayerAtRest;
-        break;
-    case PLAYER_STATE_IDLE_RIGHT:
-        cameraToAngle += config.camera.angleOffPlayerAtRest;
-        break;
-    case PLAYER_STATE_MOVING_LEFT:
-        cameraToAngle -= config.camera.angleOffPlayerWhileMoving;
-        break;
-    case PLAYER_STATE_MOVING_RIGHT:
-        cameraToAngle += config.camera.angleOffPlayerWhileMoving;
-        break;
-    default:
-        break;
-    }
-    game.display.elapsedDurationToAngle += deltaTime;
     float floorRadius = config.world.floorRadius;
-    float currentAngle = -game.display.camera.rotation;
-    game.display.cameraToAngle = cameraToAngle;
-    float eps = 1e-6f;
-    float currentCameraToAngle;
-    if (abs(abs(cameraToAngle - currentAngle) - config.gameplay.speedInDegreesPerSecond * deltaTime) <= eps)
-    {
-        currentCameraToAngle = cameraToAngle;
-        TraceLog(LOG_INFO, "Moving camera immediately");
-    }
-    else
-    {
-        currentCameraToAngle = cameraToAngle;
-        // if (cameraToAngle > currentAngle)
-        // {
-        //     currentCameraToAngle = config.camera.angleMovePerSecond * deltaTime + currentAngle;
-        //     if (currentCameraToAngle > cameraToAngle)
-        //     {
-        //         currentCameraToAngle = cameraToAngle;
-        //     }
-        // }
-        // else
-        // {
-        //     currentCameraToAngle = currentAngle - config.camera.angleMovePerSecond * deltaTime;
-        //     if (currentCameraToAngle < cameraToAngle)
-        //     {
-        //         currentCameraToAngle = cameraToAngle;
-        //     }
-        // }
 
-        // if (game.display.durationToAngle == 0)
-        // {
-        //     game.display.elapsedDurationToAngle = 0;
-        //     game.display.durationToAngle = 2.0f; // abs(cameraToAngle - currentAngle) / config.camera.angleMovePerSecond;
-        //     game.display.camerFromAngle = currentAngle;
-        //     TraceLog(LOG_INFO, "Large change starting ease");
-        // }
-        // if (game.display.elapsedDurationToAngle < game.display.durationToAngle)
-        // {
-
-        //     currentCameraToAngle = EaseLinearIn(game.display.elapsedDurationToAngle, game.display.camerFromAngle, cameraToAngle - game.display.camerFromAngle, game.display.durationToAngle);
-        //     TraceLog(LOG_INFO, "Easing camera %f. Elapsed: %f, Duration: %f", currentCameraToAngle, game.display.elapsedDurationToAngle, game.display.durationToAngle);
-        // }
-        // else
-        // {
-        //     game.display.elapsedDurationToAngle = 0;
-        //     game.display.durationToAngle = 0;
-        //     currentCameraToAngle = cameraToAngle;
-        // }
-    }
-
+    float currentCameraToAngle = cameraToAngle;
     game.display.camera.target.x = floorRadius * sinf(currentCameraToAngle * DEG2RAD);
     game.display.camera.target.y = -floorRadius * cosf(currentCameraToAngle * DEG2RAD);
-    game.display.camera.zoom = game.display.width / ((game.player.state == PLAYER_STATE_MOVING_LEFT || game.player.state == PLAYER_STATE_MOVING_RIGHT) ? game.display.chordLengthWhileMoving : game.display.chordLengthAtRest);
     game.display.camera.rotation = -currentCameraToAngle;
+
+    if (game.display.zoomEnd != game.display.camera.zoom)
+    {
+        game.display.elapsedZoomTime += deltaTime;
+        if (game.display.elapsedZoomTime < game.display.zoomTime)
+        {
+            switch (game.display.zoomEaseType)
+            {
+            case EASE_LINEAR:
+                game.display.camera.zoom = EaseLinearIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            case EASE_SINE_IN:
+                game.display.camera.zoom = EaseSineIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            case EASE_SINE_OUT:
+                game.display.camera.zoom = EaseSineOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            case EASE_CIRCULAR_IN:
+                game.display.camera.zoom = EaseCircIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            case EASE_CIRCULAR_OUT:
+                game.display.camera.zoom = EaseCircOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            case EASE_CUBIC_IN:
+                game.display.camera.zoom = EaseCubicIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            case EASE_CUBIC_OUT:
+                game.display.camera.zoom = EaseCubicOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            case EASE_QUADRATIC_IN:
+                game.display.camera.zoom = EaseQuadIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            case EASE_QUADRATIC_OUT:
+                game.display.camera.zoom = EaseQuadOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            case EASE_EXPONENTIAL_IN:
+                game.display.camera.zoom = EaseExpoIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            case EASE_EXPONENTIAL_OUT:
+                game.display.camera.zoom = EaseExpoOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            default:
+                break;
+            }
+        }
+        else
+        {
+            game.display.zoomEnd = game.display.camera.zoom;
+            game.display.elapsedZoomTime = 0;
+        }
+    }
 
     // Render
     {
