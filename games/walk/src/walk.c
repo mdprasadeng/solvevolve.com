@@ -93,6 +93,7 @@ typedef struct CameraConfig
 {
     float angleShowAtRest;
     float angleShowWhileMoving;
+    float dampenedAngle;
     float angleOffPlayerAtRest;
     float angleOffPlayerWhileMoving;
     EaseType restToMoveEase;
@@ -354,8 +355,9 @@ void InitGame(Game *game, int width, int height)
 
     game->config.camera.angleShowAtRest = 60;
     game->config.camera.angleShowWhileMoving = 20;
-    game->config.camera.angleOffPlayerAtRest = 0;
-    game->config.camera.angleOffPlayerWhileMoving = 0;
+    game->config.camera.dampenedAngle = 2;
+    game->config.camera.angleOffPlayerAtRest = 15;
+    game->config.camera.angleOffPlayerWhileMoving = 5;
     game->config.camera.restToMoveEase = EASE_CUBIC_OUT;
     game->config.camera.moveToRestEase = EASE_SINE_IN;
     game->config.camera.restToMoveDuration = 60.0f;
@@ -401,6 +403,8 @@ void InitGame(Game *game, int width, int height)
     TraceLog(LOG_INFO, "Camera offset: %f, %f", game->display.camera.offset.x, game->display.camera.offset.y);
     
 }
+
+
 
 void UpdateDrawFrame(void)
 {
@@ -448,6 +452,38 @@ void UpdateDrawFrame(void)
         }
         
     }
+    {
+        float floorRadius = config.world.floorRadius;
+        float cameraTargetAngle = player->atAngle;
+        if (player->state == PLAYER_STATE_IDLE)
+        {
+            if (player->prevState == PLAYER_STATE_MOVING_LEFT)
+            {
+                cameraTargetAngle -= config.camera.angleOffPlayerAtRest;
+            }
+            else if (player->prevState == PLAYER_STATE_MOVING_RIGHT)
+            {
+                cameraTargetAngle += config.camera.angleOffPlayerAtRest;
+            }
+        }
+        else 
+        {
+            if (player->state == PLAYER_STATE_MOVING_LEFT)
+            {
+                cameraTargetAngle -= config.camera.angleOffPlayerWhileMoving;
+            }
+            else if (player->state == PLAYER_STATE_MOVING_RIGHT)
+            {
+                cameraTargetAngle += config.camera.angleOffPlayerWhileMoving;
+            }
+            
+        }
+        
+        game.display.camera.target.x = floorRadius * sinf(cameraTargetAngle * DEG2RAD);
+        game.display.camera.target.y = -floorRadius * cosf(cameraTargetAngle * DEG2RAD);
+        game.display.camera.zoom = game.display.width / (player->state == PLAYER_STATE_IDLE ? game.display.chordLengthAtRest : game.display.chordLengthWhileMoving);
+        game.display.camera.rotation = -cameraTargetAngle;
+    }
 
     //Render
     {
@@ -481,10 +517,7 @@ void UpdateDrawFrame(void)
                 (180 + player->atAngle),
                 BLACK);
             
-            game.display.camera.target.x = floorRadius * sinf(playerAngleInRad);
-            game.display.camera.target.y = -floorRadius * cosf(playerAngleInRad);
-            game.display.camera.zoom = game.display.width / (player->state == PLAYER_STATE_IDLE ? game.display.chordLengthAtRest : game.display.chordLengthWhileMoving);
-            game.display.camera.rotation = -player->atAngle;
+           
         }
 
         // Draw Floor
