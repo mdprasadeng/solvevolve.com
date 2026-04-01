@@ -156,6 +156,11 @@ typedef struct Hud
 {
 } Hud;
 
+typedef struct Controls
+{
+    float tappedDuration;
+} Controls;
+
 typedef struct Display
 {
     int width;
@@ -180,6 +185,7 @@ typedef struct Game
     World world;
     Player player;
     Display display;
+    Controls controls;
 } Game;
 
 #pragma endregion
@@ -378,7 +384,7 @@ void InitGame(Game *game, int width, int height)
     game->config.editor.showDemoWindow = false;
     game->config.editor.showAngleValues = true;
 
-    game->config.controls.maxDurationForQuickTap = 0.2f;
+    game->config.controls.maxDurationForQuickTap = 10.0f/60.f;
 
     game->config.player.width = 20;
     game->config.player.height = 40;
@@ -414,8 +420,19 @@ void InitGame(Game *game, int width, int height)
 void UpdateDrawFrame(void)
 {
 
-    Config config = game.config;
     float deltaTime = GetFrameTime();
+    if (IsKeyPressed(KEY_SPACE))
+    {
+        game.controls.tappedDuration = 0;
+    }
+
+    if (IsKeyDown(KEY_SPACE))
+    {
+        game.controls.tappedDuration += deltaTime;
+    }
+
+    Config config = game.config;
+
     // Process Input
     {
         switch (game.player.state)
@@ -423,24 +440,32 @@ void UpdateDrawFrame(void)
 
         case PLAYER_STATE_MOVING_LEFT:
         case PLAYER_STATE_MOVING_RIGHT:
-            if (IsKeyPressed(KEY_SPACE))
+            if (IsKeyDown(KEY_SPACE))
             {
-                game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_IDLE_LEFT : PLAYER_STATE_IDLE_RIGHT;
-                game.display.zoomEaseType = game.config.camera.moveToRestEase;
-                game.display.elapsedZoomTime = 0;
-                game.display.zoomStart = game.display.camera.zoom;
-                game.display.zoomEnd = game.display.zoomAtRest;
-                game.display.zoomTime = game.config.camera.moveToRestZoomDuration;
-            }
-            else if (IsKeyPressed(KEY_LEFT_SHIFT))
-            {
-                game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
+                if (game.controls.tappedDuration > game.config.controls.maxDurationForQuickTap)
+                {
+                    game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_IDLE_LEFT : PLAYER_STATE_IDLE_RIGHT;
+                    game.display.zoomEaseType = game.config.camera.moveToRestEase;
+                    game.display.elapsedZoomTime = 0;
+                    game.display.zoomStart = game.display.camera.zoom;
+                    game.display.zoomEnd = game.display.zoomAtRest;
+                    game.display.zoomTime = game.config.camera.moveToRestZoomDuration;
+                }
             }
             else
             {
-                float speed = config.gameplay.speedInDegreesPerSecond * deltaTime;
-                game.player.atAngle = game.player.atAngle + (game.player.state == PLAYER_STATE_MOVING_LEFT ? -speed : speed);
+                
+                if ( IsKeyReleased(KEY_SPACE) && game.controls.tappedDuration <= game.config.controls.maxDurationForQuickTap)
+                {
+                    game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
+                }
+                else
+                {
+                    float speed = config.gameplay.speedInDegreesPerSecond * deltaTime;
+                    game.player.atAngle = game.player.atAngle + (game.player.state == PLAYER_STATE_MOVING_LEFT ? -speed : speed);
+                }
             }
+
             break;
 
         case PLAYER_STATE_IDLE_RIGHT:
