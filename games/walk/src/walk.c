@@ -19,8 +19,10 @@
 #pragma endregion
 
 #pragma region Data
-typedef enum PlayerState {
-    PLAYER_STATE_IDLE,
+typedef enum PlayerState
+{
+    PLAYER_STATE_IDLE_LEFT = 0,
+    PLAYER_STATE_IDLE_RIGHT,
     PLAYER_STATE_MOVING_LEFT,
     PLAYER_STATE_MOVING_RIGHT
 } PlayerState;
@@ -28,8 +30,8 @@ typedef enum PlayerState {
 typedef struct Player
 {
     float atAngle;
+    float shadowAtAngle;
     PlayerState state;
-    PlayerState prevState;
 } Player;
 
 typedef struct Tree
@@ -93,13 +95,18 @@ typedef struct CameraConfig
 {
     float angleShowAtRest;
     float angleShowWhileMoving;
+
     float dampenedAngle;
     float angleOffPlayerAtRest;
     float angleOffPlayerWhileMoving;
+
     EaseType restToMoveEase;
     EaseType moveToRestEase;
-    float restToMoveDuration;
-    float moveToRestDuration;
+
+    float angleMovePerSecond;
+    float restToMoveZoomDuration;
+    float moveToRestZoomDuration;
+
     Vector2 offset;
 
 } CameraConfig;
@@ -138,14 +145,12 @@ typedef struct Config
 
 typedef struct World
 {
-    Player player;
     Floor floor;
     Tree *trees;
     int treesCount;
     Cloud *clouds;
     int cloudsCount;
 } World;
-
 
 typedef struct Hud
 {
@@ -159,6 +164,11 @@ typedef struct Display
     Camera2D worldCamera;
     float chordLengthAtRest;
     float chordLengthWhileMoving;
+    float elapsedDurationToAngle;
+    float cameraToAngle;
+    float durationToAngle;
+    float cameraToZoom;
+    float durationToZoom;
     Hud hud;
 } Display;
 
@@ -166,6 +176,7 @@ typedef struct Game
 {
     Config config;
     World world;
+    Player player;
     Display display;
 } Game;
 
@@ -193,13 +204,12 @@ int main(void)
     InitGame(&game, width, height);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(width, height, "Walk");
-    
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
 #else
     rlImGuiSetup(false); // sets up ImGui with ether a dark or light default theme
-    SetTargetFPS(60); // Set our game to run at 60 frames-per-second
+    SetTargetFPS(60);    // Set our game to run at 60 frames-per-second
 
     while (!WindowShouldClose()) // Detect window close button or ESC key
     {
@@ -216,9 +226,7 @@ int main(void)
     return 0;
 }
 
-
 #pragma region Game Generation Functions
-
 
 void GenerateTrees(Game *game)
 {
@@ -292,7 +300,7 @@ void GenerateRocks(Game *game)
     for (int i = 0; i < params.totalRocks; i++)
     {
         float rockAtRadius = params.floorRadius - world->floor.boundingRadiusPerRock[i] - 10; // 10 is just an extra offset to make sure rocks dont intersect with the world border
-        rockAtRadius = rockAtRadius * randomFloat(0.9f, 1.0f);                                 // add some noise to the radius of the rock to make it look more natural
+        rockAtRadius = rockAtRadius * randomFloat(0.9f, 1.0f);                                // add some noise to the radius of the rock to make it look more natural
         float gapAngle = (2 * PI) / params.totalRocks;
         gapAngle = gapAngle * randomFloat(0.95f, 1.0f); // add some noise to the angle between rocks to make it look more natural
         float rockAngle = (gapAngle * i);
@@ -328,12 +336,10 @@ void FreeGame(Game *game)
 
 #pragma endregion
 
-
 void InitGame(Game *game, int width, int height)
 {
-    #pragma region Config
-    
-    
+#pragma region Config
+
     game->config.world.floorRadius = 900;
     game->config.world.treeCount = 20;
     game->config.world.treeWidth[0] = 10;
@@ -355,13 +361,14 @@ void InitGame(Game *game, int width, int height)
 
     game->config.camera.angleShowAtRest = 60;
     game->config.camera.angleShowWhileMoving = 20;
-    game->config.camera.dampenedAngle = 2;
+    game->config.camera.dampenedAngle = 3;
     game->config.camera.angleOffPlayerAtRest = 15;
     game->config.camera.angleOffPlayerWhileMoving = 5;
     game->config.camera.restToMoveEase = EASE_CUBIC_OUT;
     game->config.camera.moveToRestEase = EASE_SINE_IN;
-    game->config.camera.restToMoveDuration = 60.0f;
-    game->config.camera.moveToRestDuration = 6 * 60.0f;
+    game->config.camera.angleMovePerSecond = 0.5f;
+    game->config.camera.restToMoveZoomDuration = 1.0f;
+    game->config.camera.moveToRestZoomDuration = 5.0f;
     game->config.camera.offset = (Vector2){0.5f, 0.6f};
 
     game->config.gameplay.speedInDegreesPerSecond = 360.0f / (120);
@@ -374,118 +381,139 @@ void InitGame(Game *game, int width, int height)
     game->config.player.width = 20;
     game->config.player.height = 40;
 
-    #pragma endregion
-    
+#pragma endregion
+
     game->display.width = width;
     game->display.height = height;
     GenerateWorld(game);
-    game->world.player = (Player){
+    game->player = (Player){
         .atAngle = 0,
-        .state = PLAYER_STATE_MOVING_RIGHT,
-        .prevState = PLAYER_STATE_IDLE
-    };
+        .shadowAtAngle = 0,
+        .state = PLAYER_STATE_MOVING_RIGHT};
 
     game->display.chordLengthWhileMoving = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowWhileMoving / 2));
     game->display.chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
+
     game->display.camera = (Camera2D){
-        .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
-        .target = (Vector2){0, 0},
-        .rotation = 0,
-        .zoom = width / (game->world.player.state == PLAYER_STATE_IDLE ? game->display.chordLengthAtRest : game->display.chordLengthWhileMoving)
-    };
+        .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y}};
+
     game->display.worldCamera = (Camera2D){
         .offset = {width * 0.5f, height * 0.5f},
         .target = (Vector2){0, 0},
         .rotation = 0,
-        .zoom = width / ( game->config.world.floorRadius * 5.0f)
-    };
-    TraceLog(LOG_INFO, "Camera zoom: %f", game->display.camera.zoom);
-    TraceLog(LOG_INFO, "Camera offset: %f, %f", game->display.camera.offset.x, game->display.camera.offset.y);
-    
+        .zoom = width / (game->config.world.floorRadius * 5.0f)};
 }
-
-
 
 void UpdateDrawFrame(void)
 {
 
-    Player *player = &game.world.player;
     Config config = game.config;
     float deltaTime = GetFrameTime();
-    //Process Input
+    // Process Input
     {
-        
-        if (IsKeyDown(KEY_SPACE))
+        switch (game.player.state)
         {
-            if (player->state != PLAYER_STATE_IDLE) {
-                player->prevState = player->state;
-            }
-                
-            player->state = PLAYER_STATE_IDLE;
-        }
-        else {
-            if (player->state == PLAYER_STATE_IDLE)
+
+        case PLAYER_STATE_MOVING_RIGHT:
+            if (IsKeyPressed(KEY_SPACE))
             {
-                PlayerState prevState = player->prevState;
-                player->prevState = player->state;
-                player->state = prevState;
-            } else {
-                if (IsKeyPressed(KEY_LEFT_SHIFT)) {
-                    player->prevState = player->state;
-                    player->state = player->state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
-                }
+                game.player.state = PLAYER_STATE_IDLE_RIGHT;
             }
+            else if (IsKeyPressed(KEY_LEFT_SHIFT))
+            {
+                game.player.state = PLAYER_STATE_MOVING_LEFT;
+            }
+            else
+            {
+                float speed = config.gameplay.speedInDegreesPerSecond * deltaTime;
+                game.player.atAngle += speed;
+            }
+            break;
+        case PLAYER_STATE_MOVING_LEFT:
+            if (IsKeyPressed(KEY_SPACE))
+            {
+                game.player.state = PLAYER_STATE_IDLE_LEFT;
+            }
+            else if (IsKeyPressed(KEY_LEFT_SHIFT))
+            {
+                game.player.state = PLAYER_STATE_MOVING_RIGHT;
+            }
+            else
+            {
+                float speed = config.gameplay.speedInDegreesPerSecond * deltaTime;
+                game.player.atAngle -= speed;
+            }
+            break;
+
+        case PLAYER_STATE_IDLE_LEFT:
+            if (!IsKeyDown(KEY_SPACE))
+            {
+                game.player.state = PLAYER_STATE_MOVING_LEFT;
+            }
+            break;
+        case PLAYER_STATE_IDLE_RIGHT:
+            if (!IsKeyDown(KEY_SPACE))
+            {
+                game.player.state = PLAYER_STATE_MOVING_RIGHT;
+            }
+            break;
+        default:
+            break;
         }
-        
     }
-    //Tick
+    float cameraToAngle = game.player.atAngle;
+    switch (game.player.state)
     {
-        
-        float speed = config.gameplay.speedInDegreesPerSecond * deltaTime;
-        if (player->state == PLAYER_STATE_MOVING_LEFT)
-        {
-            player->atAngle -= speed;
-        }
-        else if (player->state == PLAYER_STATE_MOVING_RIGHT)
-        {
-            player->atAngle += speed;
-        }
-        
+    case PLAYER_STATE_IDLE_LEFT:
+        cameraToAngle -= config.camera.angleOffPlayerAtRest;
+        break;
+    case PLAYER_STATE_IDLE_RIGHT:
+        cameraToAngle += config.camera.angleOffPlayerAtRest;
+        break;
+    case PLAYER_STATE_MOVING_LEFT:
+        cameraToAngle -= config.camera.angleOffPlayerWhileMoving;
+        break;
+    case PLAYER_STATE_MOVING_RIGHT:
+        cameraToAngle += config.camera.angleOffPlayerWhileMoving;
+        break;
+    default:
+        break;
     }
+    game.display.elapsedDurationToAngle += deltaTime;
+    float floorRadius = config.world.floorRadius;
+    float currentAngle = -game.display.camera.rotation;
+    game.display.cameraToAngle = cameraToAngle;
+    float eps = 1e-6f;
+    float currentCameraToAngle;
+    if (abs(abs(cameraToAngle - currentAngle) - config.gameplay.speedInDegreesPerSecond * deltaTime) <= eps)
     {
-        float floorRadius = config.world.floorRadius;
-        float cameraTargetAngle = player->atAngle;
-        if (player->state == PLAYER_STATE_IDLE)
+        currentCameraToAngle = cameraToAngle;
+    }
+    else
+    {
+        if (game.display.durationToAngle == 0)
         {
-            if (player->prevState == PLAYER_STATE_MOVING_LEFT)
-            {
-                cameraTargetAngle -= config.camera.angleOffPlayerAtRest;
-            }
-            else if (player->prevState == PLAYER_STATE_MOVING_RIGHT)
-            {
-                cameraTargetAngle += config.camera.angleOffPlayerAtRest;
-            }
+            game.display.durationToAngle =  3.0f;//abs(cameraToAngle - currentAngle) / config.camera.angleMovePerSecond;
         }
-        else 
+        if (game.display.elapsedDurationToAngle < game.display.durationToAngle)
         {
-            if (player->state == PLAYER_STATE_MOVING_LEFT)
-            {
-                cameraTargetAngle -= config.camera.angleOffPlayerWhileMoving;
-            }
-            else if (player->state == PLAYER_STATE_MOVING_RIGHT)
-            {
-                cameraTargetAngle += config.camera.angleOffPlayerWhileMoving;
-            }
-            
+            currentCameraToAngle = EaseLinearIn(game.display.elapsedDurationToAngle, currentAngle, cameraToAngle - currentAngle, game.display.durationToAngle);
+            TraceLog(LOG_INFO, "Easing camera. Elapsed: %f, Duration: %f", game.display.elapsedDurationToAngle, game.display.durationToAngle);
         }
-        
-        game.display.camera.target.x = floorRadius * sinf(cameraTargetAngle * DEG2RAD);
-        game.display.camera.target.y = -floorRadius * cosf(cameraTargetAngle * DEG2RAD);
-        game.display.camera.zoom = game.display.width / (player->state == PLAYER_STATE_IDLE ? game.display.chordLengthAtRest : game.display.chordLengthWhileMoving);
-        game.display.camera.rotation = -cameraTargetAngle;
+        else
+        {
+            game.display.elapsedDurationToAngle = 0;
+            game.display.durationToAngle = 0;
+            currentCameraToAngle = cameraToAngle;
+        }
     }
 
-    //Render
+    game.display.camera.target.x = floorRadius * sinf(currentCameraToAngle * DEG2RAD);
+    game.display.camera.target.y = -floorRadius * cosf(currentCameraToAngle * DEG2RAD);
+    game.display.camera.zoom = game.display.width / (game.display.chordLengthAtRest + (game.display.chordLengthWhileMoving - game.display.chordLengthAtRest) * (abs(cameraToAngle - currentAngle) / 180.0f));
+    game.display.camera.rotation = -currentCameraToAngle;
+
+    // Render
     {
         BeginDrawing();
 
@@ -497,15 +525,18 @@ void UpdateDrawFrame(void)
 
 #pragma region Render World
 
-        if (IsKeyDown(KEY_W)) {
+        if (IsKeyDown(KEY_W))
+        {
             BeginMode2D(game.display.worldCamera);
-        } else {
+        }
+        else
+        {
             BeginMode2D(game.display.camera);
         }
-        
+
         float floorRadius = config.world.floorRadius;
-        float playerAngleInRad = player->atAngle * DEG2RAD;
-        
+        float playerAngleInRad = game.player.atAngle * DEG2RAD;
+
         // Draw Player
         {
             DrawRectanglePro(
@@ -514,14 +545,12 @@ void UpdateDrawFrame(void)
                     -floorRadius * cosf(playerAngleInRad),
                     config.player.width, config.player.height},
                 (Vector2){config.player.width / 2, 0},
-                (180 + player->atAngle),
+                (180 + game.player.atAngle),
                 BLACK);
-            
-           
         }
 
         // Draw Floor
-        DrawRing((Vector2){0, 0}, floorRadius - 5, floorRadius-1, 0, 360, 360, BLACK);
+        DrawRing((Vector2){0, 0}, floorRadius - 5, floorRadius - 1, 0, 360, 360, BLACK);
 
         if (config.editor.showAngleValues)
         {
@@ -575,22 +604,16 @@ void UpdateDrawFrame(void)
             DrawRectanglePro(
                 (Rectangle){cloudX, cloudY, clouds[i].width, clouds[i].height},
                 (Vector2){clouds[i].width / 2, 0},
-                (clouds[i].atAngle) ,
+                (clouds[i].atAngle),
                 (Color){130, 130, 130, 55});
         }
 
-        
-
         EndMode2D();
 #pragma endregion
-
 
 #ifdef PLATFORM_DESKTOP
         rlImGuiEnd(); // ends the ImGui content mode. Make all ImGui calls before this
 #endif
         EndDrawing();
     }
-    
-    
 }
-
