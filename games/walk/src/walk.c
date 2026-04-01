@@ -384,7 +384,7 @@ void InitGame(Game *game, int width, int height)
     game->config.editor.showDemoWindow = false;
     game->config.editor.showAngleValues = true;
 
-    game->config.controls.maxDurationForQuickTap = 10.0f/60.f;
+    game->config.controls.maxDurationForQuickTap = 20.0f/60.f;
 
     game->config.player.width = 20;
     game->config.player.height = 40;
@@ -421,12 +421,12 @@ void UpdateDrawFrame(void)
 {
 
     float deltaTime = GetFrameTime();
-    if (IsKeyPressed(KEY_SPACE))
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
     {
         game.controls.tappedDuration = 0;
     }
 
-    if (IsKeyDown(KEY_SPACE))
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
     {
         game.controls.tappedDuration += deltaTime;
     }
@@ -440,7 +440,7 @@ void UpdateDrawFrame(void)
 
         case PLAYER_STATE_MOVING_LEFT:
         case PLAYER_STATE_MOVING_RIGHT:
-            if (IsKeyDown(KEY_SPACE))
+            if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
             {
                 if (game.controls.tappedDuration > game.config.controls.maxDurationForQuickTap)
                 {
@@ -455,7 +455,7 @@ void UpdateDrawFrame(void)
             else
             {
                 
-                if ( IsKeyReleased(KEY_SPACE) && game.controls.tappedDuration <= game.config.controls.maxDurationForQuickTap)
+                if ( (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) && game.controls.tappedDuration <= game.config.controls.maxDurationForQuickTap)
                 {
                     game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
                 }
@@ -470,7 +470,7 @@ void UpdateDrawFrame(void)
 
         case PLAYER_STATE_IDLE_RIGHT:
         case PLAYER_STATE_IDLE_LEFT:
-            if (!IsKeyDown(KEY_SPACE))
+            if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT))
             {
                 game.player.state = game.player.state == PLAYER_STATE_IDLE_RIGHT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
                 game.display.zoomEaseType = game.config.camera.restToMoveEase;
