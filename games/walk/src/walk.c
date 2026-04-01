@@ -165,6 +165,7 @@ typedef struct Display
     float chordLengthAtRest;
     float chordLengthWhileMoving;
     float elapsedDurationToAngle;
+    float camerFromAngle;
     float cameraToAngle;
     float durationToAngle;
     float cameraToZoom;
@@ -395,7 +396,8 @@ void InitGame(Game *game, int width, int height)
     game->display.chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
 
     game->display.camera = (Camera2D){
-        .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y}};
+        .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
+        .rotation = -game->config.camera.angleOffPlayerWhileMoving};
 
     game->display.worldCamera = (Camera2D){
         .offset = {width * 0.5f, height * 0.5f},
@@ -488,29 +490,52 @@ void UpdateDrawFrame(void)
     if (abs(abs(cameraToAngle - currentAngle) - config.gameplay.speedInDegreesPerSecond * deltaTime) <= eps)
     {
         currentCameraToAngle = cameraToAngle;
+        TraceLog(LOG_INFO, "Moving camera immediately");
     }
     else
     {
-        if (game.display.durationToAngle == 0)
-        {
-            game.display.durationToAngle =  3.0f;//abs(cameraToAngle - currentAngle) / config.camera.angleMovePerSecond;
-        }
-        if (game.display.elapsedDurationToAngle < game.display.durationToAngle)
-        {
-            currentCameraToAngle = EaseLinearIn(game.display.elapsedDurationToAngle, currentAngle, cameraToAngle - currentAngle, game.display.durationToAngle);
-            TraceLog(LOG_INFO, "Easing camera. Elapsed: %f, Duration: %f", game.display.elapsedDurationToAngle, game.display.durationToAngle);
-        }
-        else
-        {
-            game.display.elapsedDurationToAngle = 0;
-            game.display.durationToAngle = 0;
-            currentCameraToAngle = cameraToAngle;
-        }
+        currentCameraToAngle = cameraToAngle;
+        // if (cameraToAngle > currentAngle)
+        // {
+        //     currentCameraToAngle = config.camera.angleMovePerSecond * deltaTime + currentAngle;
+        //     if (currentCameraToAngle > cameraToAngle)
+        //     {
+        //         currentCameraToAngle = cameraToAngle;
+        //     }
+        // }
+        // else
+        // {
+        //     currentCameraToAngle = currentAngle - config.camera.angleMovePerSecond * deltaTime;
+        //     if (currentCameraToAngle < cameraToAngle)
+        //     {
+        //         currentCameraToAngle = cameraToAngle;
+        //     }
+        // }
+
+        // if (game.display.durationToAngle == 0)
+        // {
+        //     game.display.elapsedDurationToAngle = 0;
+        //     game.display.durationToAngle = 2.0f; // abs(cameraToAngle - currentAngle) / config.camera.angleMovePerSecond;
+        //     game.display.camerFromAngle = currentAngle;
+        //     TraceLog(LOG_INFO, "Large change starting ease");
+        // }
+        // if (game.display.elapsedDurationToAngle < game.display.durationToAngle)
+        // {
+
+        //     currentCameraToAngle = EaseLinearIn(game.display.elapsedDurationToAngle, game.display.camerFromAngle, cameraToAngle - game.display.camerFromAngle, game.display.durationToAngle);
+        //     TraceLog(LOG_INFO, "Easing camera %f. Elapsed: %f, Duration: %f", currentCameraToAngle, game.display.elapsedDurationToAngle, game.display.durationToAngle);
+        // }
+        // else
+        // {
+        //     game.display.elapsedDurationToAngle = 0;
+        //     game.display.durationToAngle = 0;
+        //     currentCameraToAngle = cameraToAngle;
+        // }
     }
 
     game.display.camera.target.x = floorRadius * sinf(currentCameraToAngle * DEG2RAD);
     game.display.camera.target.y = -floorRadius * cosf(currentCameraToAngle * DEG2RAD);
-    game.display.camera.zoom = game.display.width / (game.display.chordLengthAtRest + (game.display.chordLengthWhileMoving - game.display.chordLengthAtRest) * (abs(cameraToAngle - currentAngle) / 180.0f));
+    game.display.camera.zoom = game.display.width / ((game.player.state == PLAYER_STATE_MOVING_LEFT || game.player.state == PLAYER_STATE_MOVING_RIGHT) ? game.display.chordLengthWhileMoving : game.display.chordLengthAtRest);
     game.display.camera.rotation = -currentCameraToAngle;
 
     // Render
