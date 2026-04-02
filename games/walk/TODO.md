@@ -1,6 +1,10 @@
+* track rocks, trees and clouds seen
 * trigger game end screen on some condition
-* game start screen
+    * transition player back to center and zoomout
 * take screenshot
+* generate bushes
+* game start screen
+
 
 Ideas
 * walk
