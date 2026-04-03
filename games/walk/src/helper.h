@@ -37,3 +37,9 @@ void DrawRectangleLinesPro(Rectangle rect, Vector2 origin, float rotation, Color
     DrawLineEx(p3, p4, lineThick, color);
     DrawLineEx(p4, p1, lineThick, color);
 }
+
+float Vector2AnglePositiveDegree(Vector2 l1, Vector2 l2) {
+    float angle = Vector2Angle(l1, l2);
+    angle = (angle < 0) ? 2 * PI + angle: angle;
+    return RAD2DEG * angle;
+}

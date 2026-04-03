@@ -30,7 +30,6 @@ typedef enum PlayerState
 typedef struct Player
 {
     float atAngle;
-    float shadowAtAngle;
     PlayerState state;
 } Player;
 
@@ -53,6 +52,10 @@ typedef struct Cloud
 
 typedef struct Floor
 {
+    float radius;
+    float radiusSeenWhileMoving;
+    float radiusSeenAtRest;
+    float bouldersCountAtRest;
     int totalRocks;
     int *pointsPerRock;
     float *boundingRadiusPerRock;
@@ -73,12 +76,19 @@ typedef struct WorldConfig
     int totalRocks;
     int rockPointsRange[2];
     float rockRadiusRange[2];
+    int pebbleCorners;
+    int rockCorners;
+    int boulderCorners;
+    float pebbleRadius;
+    float rockRadius;
+    float boulderRadius;
 } WorldConfig;
 
 typedef enum
 {
     EASE_LINEAR = 0,
     EASE_SINE_IN,
+    EASE_SINE_IN_OUT,
     EASE_SINE_OUT,
     EASE_CIRCULAR_IN,
     EASE_CIRCULAR_OUT,
@@ -120,6 +130,8 @@ typedef struct EditorConfig
 {
     bool showDemoWindow;
     bool showAngleValues;
+    bool showRadialLines;
+    bool showRockCircles;
 } EditorConfig;
 
 typedef struct ContorlsConfig
@@ -150,6 +162,13 @@ typedef struct World
     int treesCount;
     Cloud *clouds;
     int cloudsCount;
+
+    int radialLinesCount;
+    Vector2 radialOutStarts[360];
+    Vector2 radialOutEnds[360];
+    Vector2 radialInStarts[360];
+    bool visted[360];
+    bool allVisited;
 } World;
 
 typedef struct Hud
@@ -271,6 +290,7 @@ void GenerateRocks(Game *game)
 {
     World *world = &game->world;
     WorldConfig params = game->config.world;
+
     world->floor.totalRocks = params.totalRocks;
     world->floor.pointsPerRock = (int *)malloc(params.totalRocks * sizeof(int));
     world->floor.boundingRadiusPerRock = (float *)malloc(params.totalRocks * sizeof(float));
@@ -330,6 +350,20 @@ void GenerateWorld(Game *game)
     GenerateTrees(game);
     GenerateClouds(game);
     GenerateRocks(game);
+    float floorRadius = game->config.world.floorRadius;
+    game->world.radialLinesCount = 360;
+    for (int i = 0; i < game->world.radialLinesCount; i++)
+    {
+        float angle = (360.0f / game->world.radialLinesCount) * i * DEG2RAD;
+        game->world.radialInStarts[i].x = (floorRadius - 15) * sinf(angle);
+        game->world.radialInStarts[i].y = -(floorRadius - 15) * cosf(angle);
+
+        game->world.radialOutStarts[i].x = (floorRadius + 15) * sinf(angle);
+        game->world.radialOutStarts[i].y = -(floorRadius + 15) * cosf(angle);
+
+        game->world.radialOutEnds[i].x = (floorRadius + 500) * sinf(angle);
+        game->world.radialOutEnds[i].y = -(floorRadius + 500) * cosf(angle);
+    }
 }
 
 void FreeGame(Game *game)
@@ -348,7 +382,7 @@ void InitGame(Game *game, int width, int height)
 {
 #pragma region Config
 
-    game->config.world.floorRadius = 900;
+    game->config.world.floorRadius = 800;
     game->config.world.treeCount = 20;
     game->config.world.treeWidth[0] = 10;
     game->config.world.treeWidth[1] = 30;
@@ -359,35 +393,43 @@ void InitGame(Game *game, int width, int height)
     game->config.world.cloudWidth[1] = 150;
     game->config.world.cloudHeight[0] = 20;
     game->config.world.cloudHeight[1] = 60;
-    game->config.world.cloudFloatingHeight[0] = 50;
-    game->config.world.cloudFloatingHeight[1] = 150;
-    game->config.world.totalRocks = 60;
-    game->config.world.rockPointsRange[0] = 5;
-    game->config.world.rockPointsRange[1] = 15;
-    game->config.world.rockRadiusRange[0] = 5;
+    game->config.world.cloudFloatingHeight[0] = 85;
+    game->config.world.cloudFloatingHeight[1] = 250;
+    game->config.world.totalRocks = 0;
+    game->config.world.rockPointsRange[0] = 9;
+    game->config.world.rockPointsRange[1] = 13;
+    game->config.world.rockRadiusRange[0] = 10;
     game->config.world.rockRadiusRange[1] = 20;
+    game->config.world.pebbleCorners = 5;
+    game->config.world.rockCorners = 5;
+    game->config.world.boulderCorners = 8;
+    game->config.world.pebbleRadius = 2.0f;
+    game->config.world.rockRadius = 8.0f;
+    game->config.world.boulderRadius = 12.0f;
 
-    game->config.camera.angleShowAtRest = 40;
-    game->config.camera.angleShowWhileMoving = 15;
+    game->config.camera.angleShowAtRest = 60;
+    game->config.camera.angleShowWhileMoving = 20;
     game->config.camera.dampenedAngle = 3;
     game->config.camera.angleOffPlayerAtRest = 0;
     game->config.camera.angleOffPlayerWhileMoving = 0;
     game->config.camera.restToMoveEase = EASE_SINE_OUT;
-    game->config.camera.moveToRestEase = EASE_SINE_IN;
+    game->config.camera.moveToRestEase = EASE_SINE_IN_OUT;
     game->config.camera.angleMovePerSecond = 0.5f;
     game->config.camera.restToMoveZoomDuration = 3.0f;
     game->config.camera.moveToRestZoomDuration = 5.0f;
     game->config.camera.offset = (Vector2){0.5f, 0.6f};
 
-    game->config.gameplay.speedInDegreesPerSecond = 360.0f / (120);
+    game->config.gameplay.speedInDegreesPerSecond = 360.0f / (90);
 
     game->config.editor.showDemoWindow = false;
     game->config.editor.showAngleValues = true;
+    game->config.editor.showRadialLines = false;
+    game->config.editor.showRockCircles = true;
 
-    game->config.controls.maxDurationForQuickTap = 20.0f/60.f;
+    game->config.controls.maxDurationForQuickTap = 20.0f / 60.f;
 
-    game->config.player.width = 20;
-    game->config.player.height = 40;
+    game->config.player.width = 10;
+    game->config.player.height = 20;
 
 #pragma endregion
 
@@ -396,11 +438,12 @@ void InitGame(Game *game, int width, int height)
     GenerateWorld(game);
     game->player = (Player){
         .atAngle = 0,
-        .shadowAtAngle = 0,
         .state = PLAYER_STATE_MOVING_RIGHT};
 
     float chordLengthWhileMoving = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowWhileMoving / 2));
     float chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
+    game->world.floor.radius = game->config.world.floorRadius;
+
     game->display.zoomAtRest = width / chordLengthAtRest;
     game->display.zoomWhileMoving = width / chordLengthWhileMoving;
     game->display.zoomStart = game->display.zoomWhileMoving;
@@ -408,6 +451,7 @@ void InitGame(Game *game, int width, int height)
 
     game->display.camera = (Camera2D){
         .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
+        .target = {0, -game->config.world.floorRadius},
         .zoom = game->display.zoomWhileMoving};
 
     game->display.worldCamera = (Camera2D){
@@ -415,6 +459,15 @@ void InitGame(Game *game, int width, int height)
         .target = (Vector2){0, 0},
         .rotation = 0,
         .zoom = width / (game->config.world.floorRadius * 5.0f)};
+
+    game->display.camera.zoom = game->display.zoomAtRest;
+    Vector2 worldBottomMiddleAtRest = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
+    game->world.floor.radiusSeenAtRest = -worldBottomMiddleAtRest.y;
+    game->display.camera.zoom = game->display.zoomWhileMoving;
+    Vector2 worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
+    game->world.floor.radiusSeenWhileMoving = -worldBottomMiddleWhileMoving.y;
+
+    game->world.floor.bouldersCountAtRest = (int)floorf((2 * PI * game->world.floor.radiusSeenWhileMoving) / (2 * game->config.world.boulderRadius * 1.25f));
 }
 
 void UpdateDrawFrame(void)
@@ -454,8 +507,8 @@ void UpdateDrawFrame(void)
             }
             else
             {
-                
-                if ( (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) && game.controls.tappedDuration <= game.config.controls.maxDurationForQuickTap)
+
+                if ((IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) && game.controls.tappedDuration <= game.config.controls.maxDurationForQuickTap)
                 {
                     game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
                 }
@@ -505,6 +558,9 @@ void UpdateDrawFrame(void)
                 break;
             case EASE_SINE_IN:
                 game.display.camera.zoom = EaseSineIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                break;
+            case EASE_SINE_IN_OUT:
+                game.display.camera.zoom = EaseSineInOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                 break;
             case EASE_SINE_OUT:
                 game.display.camera.zoom = EaseSineOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
@@ -582,6 +638,9 @@ void UpdateDrawFrame(void)
 
         // Draw Floor
         DrawRing((Vector2){0, 0}, floorRadius - 5, floorRadius - 1, 0, 360, 360, BLACK);
+        DrawCircleSector((Vector2){0, 0}, floorRadius - 5, 0, 360, 360, BLACK);
+        
+
 
         if (config.editor.showAngleValues)
         {
@@ -591,8 +650,138 @@ void UpdateDrawFrame(void)
                 Vector2 pos = (Vector2){
                     (floorRadius + 15) * sinf(angleRad),
                     -(floorRadius + 15) * cosf(angleRad)};
-                DrawText(TextFormat("%i", i), pos.x - 10, pos.y - 10, 10, DARKGRAY);
+
+                DrawTextPro(GetFontDefault(), TextFormat("%i", i),
+                            pos, (Vector2){0, 0}, i,
+                            10, 1, DARKGRAY);
             }
+        }
+        if (config.editor.showRadialLines)
+        {
+            for (int i = 0; i < game.world.radialLinesCount; i++)
+            {
+                DrawLineV((Vector2){0, 0}, game.world.radialInStarts[i], GRAY);
+                DrawLineV(game.world.radialOutStarts[i], game.world.radialOutEnds[i], GRAY);
+            }
+        }
+        if (config.editor.showRockCircles)
+        {
+
+            DrawCircleLines(0, 0, game.world.floor.radiusSeenAtRest, BLACK);
+            DrawCircleLines(0, 0, game.world.floor.radiusSeenWhileMoving, BLACK);
+            float drawAtRadius = game.world.floor.radius - 5 - game.config.world.boulderRadius;
+            bool offset = false;
+            while (true)
+            {
+                for (size_t i = 0; i < game.world.floor.bouldersCountAtRest; i++)
+                {
+                    float angleInRad = DEG2RAD * (360.0f / game.world.floor.bouldersCountAtRest) * i;
+                    if (offset) {
+                        angleInRad += DEG2RAD * (360.0f / game.world.floor.bouldersCountAtRest) * 0.5f;
+                    }
+                    DrawCircleLines(
+                        drawAtRadius * sinf(angleInRad),
+                        -drawAtRadius * cosf(angleInRad),
+                        game.config.world.boulderRadius - 1,
+                        BLACK);
+                    DrawCircle(
+                        drawAtRadius * sinf(angleInRad),
+                        -drawAtRadius * cosf(angleInRad),
+                        game.config.world.boulderRadius - 1,
+                        WHITE);
+                }
+                drawAtRadius -= 2 * game.config.world.boulderRadius;
+                offset = !offset;
+                if (drawAtRadius + game.config.world.boulderRadius <  game.world.floor.radiusSeenAtRest) {
+                    break;
+                }
+            }
+        }
+        DrawText(TextFormat("FPS %d", GetFPS()), 0, 0, 30, RED);
+        {
+            // Check collisions
+            Vector2 topLeft = GetScreenToWorld2D((Vector2){0, 0}, game.display.camera);
+            Vector2 topRight = GetScreenToWorld2D((Vector2){game.display.width, 0}, game.display.camera);
+            Vector2 bottomLeft = GetScreenToWorld2D((Vector2){0, game.display.height}, game.display.camera);
+            Vector2 bottomRight = GetScreenToWorld2D((Vector2){game.display.width, game.display.height}, game.display.camera);
+
+            if (config.editor.showRadialLines)
+            {
+                DrawLineV(topLeft, topRight, GREEN);
+                DrawLineV(topRight, bottomRight, GREEN);
+                DrawLineV(bottomRight, bottomLeft, GREEN);
+                DrawLineV(bottomLeft, topLeft, GREEN);
+            }
+
+            float bottomLeftAngle = floorf((Vector2AnglePositiveDegree((Vector2){0, -1}, bottomLeft)) * (game.world.radialLinesCount / 360.0f));
+            float bottomRightAngle = ceilf((Vector2AnglePositiveDegree((Vector2){0, -1}, bottomRight)) * (game.world.radialLinesCount / 360.0f));
+            Vector2 collisionPoint;
+
+            int i = bottomLeftAngle;
+            while (true)
+            {
+                if (IsKeyPressed(KEY_D))
+                {
+                    TraceLog(LOG_INFO, "Checking %d in (%f, %f)", i, bottomLeftAngle, bottomRightAngle);
+                }
+
+                // For rays on earth bottom screen is enough
+                if (CheckCollisionLines(bottomLeft, bottomRight, game.world.radialInStarts[i], (Vector2){0, 0}, &collisionPoint))
+                {
+                    if (Vector2LengthSqr(collisionPoint) < Vector2LengthSqr(game.world.radialInStarts[i]))
+                    {
+                        game.world.radialInStarts[i] = collisionPoint;
+                        game.world.visted[i] = true;
+                    }
+                }
+
+                // For rays on sky check top screen
+                if (CheckCollisionLines(topLeft, topRight, game.world.radialOutStarts[i], game.world.radialOutEnds[i], &collisionPoint))
+                {
+                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.radialOutStarts[i]))
+                    {
+                        game.world.radialOutStarts[i] = collisionPoint;
+                    }
+                }
+
+                // For rays on sky check left screen
+                if (CheckCollisionLines(bottomLeft, topLeft, game.world.radialOutStarts[i], game.world.radialOutEnds[i], &collisionPoint))
+                {
+                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.radialOutStarts[i]))
+                    {
+                        game.world.radialOutStarts[i] = collisionPoint;
+                    }
+                }
+
+                // For rays on sky check right screen
+                if (CheckCollisionLines(bottomRight, topRight, game.world.radialOutStarts[i], game.world.radialOutEnds[i], &collisionPoint))
+                {
+                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.radialOutStarts[i]))
+                    {
+                        game.world.radialOutStarts[i] = collisionPoint;
+                    }
+                }
+
+                i++;
+                if (i == bottomRightAngle)
+                    break;
+                i = (i >= game.world.radialLinesCount) ? i - game.world.radialLinesCount : i;
+            }
+
+            if (!game.world.allVisited)
+            {
+                bool allVisited = true;
+                for (int i = 0; i < game.world.radialLinesCount; i++)
+                {
+                    allVisited = allVisited && game.world.visted[i];
+                }
+                game.world.allVisited = allVisited;
+            }
+        }
+
+        if (game.world.allVisited)
+        {
+            DrawCircleV((Vector2){0, -floorRadius}, 20, RED);
         }
 
         int pointsDrawn = 0;

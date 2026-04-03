@@ -1,10 +1,22 @@
-* track rocks, trees and clouds seen
+#Today
+
 * trigger game end screen on some condition
     * transition player back to center and zoomout
 * take screenshot
 * generate bushes
 * game start screen
+* ask player to tap and based on that start on left or right
 
+#Tomorrow
+
+
+
+#Now
+* create lines from circumferences to center and outwayard
+* render lines
+* render camera display lines
+* every frame (or less frequently) 
+    * check collisions with cloud lines
 
 Ideas
 * walk
