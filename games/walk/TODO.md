@@ -75,6 +75,9 @@ wait and act
 * consistency via a tree that keeps growing
 * armadillo can roll and run
 * a God ray like cylinder around hero as space of interactivity
+* wait and select the random world to start
+Rock pattern
+* if we track the max distances to a seed and say anthing above 0.8f * times that is border
 
 
 * Observe and interact 

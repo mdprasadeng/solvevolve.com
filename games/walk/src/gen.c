@@ -94,11 +94,11 @@ Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
             }
             else if (secondMinDistance - minDistance < border * 0.1f * minDistance)
             {
-                pixels[y * width + x] = WHITE;
+                pixels[y * width + x] = GRAY;
             }
             else
             {
-                pixels[y * width + x] = DARKGRAY;
+                pixels[y * width + x] = BLACK;
             }
         }
     }
