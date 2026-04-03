@@ -80,9 +80,15 @@ Rock pattern
 * if we track the max distances to a seed and say anthing above 0.8f * times that is border
 * use the cracks for rodents, lizard etc, draining water
 * some radial rocks can be water and a reflection comes on waiting
+* things like a tree coming out of the cracks
 
 
 * Observe and interact 
     * wait for a flower to bloom and then get bees and flower in same frame for bees to find flowers
     * wait for a egg to hatch and get mother bird and baby in the same frame
-    
+
+
+## Principles
+* Only observed things are rewarded
+* Observing is done by waiting
+* Nothing blocks the player, so no input the game is done in fixed time.
