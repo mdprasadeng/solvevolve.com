@@ -8,6 +8,7 @@
 #include <math.h>
 #include <time.h>
 #include "helper.h"
+#include "gen.c"
 
 #if defined(PLATFORM_WEB)
 #include <emscripten/emscripten.h>
@@ -169,6 +170,7 @@ typedef struct World
     Vector2 radialInStarts[360];
     bool visted[360];
     bool allVisited;
+    Texture2D floorTexture;
 } World;
 
 typedef struct Hud
@@ -231,6 +233,11 @@ int main(void)
     InitGame(&game, width, height);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(width, height, "Walk");
+
+    Image rocksImage = GenImageRocks(game.world.floor.radius * 2 * 4, 256, 12, 1.f);
+    game.world.floorTexture = LoadTextureFromImage(rocksImage);
+    UnloadImage(rocksImage);
+
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
@@ -424,7 +431,7 @@ void InitGame(Game *game, int width, int height)
     game->config.editor.showDemoWindow = false;
     game->config.editor.showAngleValues = true;
     game->config.editor.showRadialLines = false;
-    game->config.editor.showRockCircles = true;
+    game->config.editor.showRockCircles = false;
 
     game->config.controls.maxDurationForQuickTap = 20.0f / 60.f;
 
@@ -468,6 +475,8 @@ void InitGame(Game *game, int width, int height)
     game->world.floor.radiusSeenWhileMoving = -worldBottomMiddleWhileMoving.y;
 
     game->world.floor.bouldersCountAtRest = (int)floorf((2 * PI * game->world.floor.radiusSeenWhileMoving) / (2 * game->config.world.boulderRadius * 1.25f));
+
+    
 }
 
 void UpdateDrawFrame(void)
@@ -636,11 +645,15 @@ void UpdateDrawFrame(void)
                 BLACK);
         }
 
-        // Draw Floor
-        DrawRing((Vector2){0, 0}, floorRadius - 5, floorRadius - 1, 0, 360, 360, BLACK);
-        DrawCircleSector((Vector2){0, 0}, floorRadius - 5, 0, 360, 360, BLACK);
         
 
+        DrawTextureEx(game.world.floorTexture, (Vector2) {-floorRadius, -floorRadius}, 0, 0.25f, WHITE);
+        // Draw Floor
+        DrawRing((Vector2){0, 0}, floorRadius - 2, floorRadius, 0, 360, 360, BROWN);
+        
+
+        //DrawCircleSector((Vector2){0, 0}, game.world.floor.radiusSeenAtRest, 0, 360, 360, WHITE);
+        
 
         if (config.editor.showAngleValues)
         {
@@ -676,7 +689,8 @@ void UpdateDrawFrame(void)
                 for (size_t i = 0; i < game.world.floor.bouldersCountAtRest; i++)
                 {
                     float angleInRad = DEG2RAD * (360.0f / game.world.floor.bouldersCountAtRest) * i;
-                    if (offset) {
+                    if (offset)
+                    {
                         angleInRad += DEG2RAD * (360.0f / game.world.floor.bouldersCountAtRest) * 0.5f;
                     }
                     DrawCircleLines(
@@ -692,7 +706,8 @@ void UpdateDrawFrame(void)
                 }
                 drawAtRadius -= 2 * game.config.world.boulderRadius;
                 offset = !offset;
-                if (drawAtRadius + game.config.world.boulderRadius <  game.world.floor.radiusSeenAtRest) {
+                if (drawAtRadius + game.config.world.boulderRadius < game.world.floor.radiusSeenAtRest)
+                {
                     break;
                 }
             }

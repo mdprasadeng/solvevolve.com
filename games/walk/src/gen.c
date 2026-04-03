@@ -6,7 +6,7 @@
 #include <math.h>
 #include <time.h>
 #include "stb_perlin.h"
-#include "helper.h"
+
 
 Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
 {
@@ -94,11 +94,11 @@ Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
             }
             else if (secondMinDistance - minDistance < border * 0.1f * minDistance)
             {
-                pixels[y * width + x] = GRAY;
+                pixels[y * width + x] = WHITE;
             }
             else
             {
-                pixels[y * width + x] = BLACK;
+                pixels[y * width + x] = BROWN;
             }
         }
     }
@@ -137,7 +137,7 @@ Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
     return image;
 }
 
-int main(void)
+int main2(void)
 {
     // Initialization
     //--------------------------------------------------------------------------------------

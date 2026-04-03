@@ -78,6 +78,8 @@ wait and act
 * wait and select the random world to start
 Rock pattern
 * if we track the max distances to a seed and say anthing above 0.8f * times that is border
+* use the cracks for rodents, lizard etc, draining water
+* some radial rocks can be water and a reflection comes on waiting
 
 
 * Observe and interact 
