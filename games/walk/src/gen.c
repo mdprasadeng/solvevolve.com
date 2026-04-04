@@ -317,7 +317,7 @@ int main(void)
                 reGenerate = false;
             }
             TraceLog(LOG_INFO, "Using border %f", border);
-            cellular = GenImageRocksPlanet(450, 10, 32, 5);
+            cellular = GenImageRocksPlanet(450, 50, 6, 5);
             texture = LoadTextureFromImage(cellular);
         }
 
