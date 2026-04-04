@@ -7,7 +7,6 @@
 #include <time.h>
 #include "stb_perlin.h"
 
-
 Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
 {
     int height = width;
@@ -35,7 +34,7 @@ Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
         for (int x = 0; x < width; x++)
         {
             // Inside your x/y loop, before calculating distances:
-            float noiseScale = 0.03f; // Frequency of the "wiggles"
+            float noiseScale = 0.03f;    // Frequency of the "wiggles"
             float noiseIntensity = 3.0f; // Magnitude of the "wiggles" (in pixels)
 
             // Calculate offsets using Perlin noise
@@ -45,7 +44,6 @@ Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
             // Use these "warped" coordinates for the distance check
             float warpedX = (float)x + offsetX;
             float warpedY = (float)y + offsetY;
-
 
             int tileX = x / tileSize;
 
@@ -137,7 +135,139 @@ Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
     return image;
 }
 
-int main2(void)
+Image GenImageRocksPlanet(int fullRadius, int tileLength, int tileRadialCount, float tileDegree)
+{
+    int width = fullRadius * 2;
+    int height = fullRadius * 2;
+    int rocksFromRadius = fullRadius - tileLength * tileRadialCount;
+    Color *pixels = (Color *)RL_MALLOC(width * height * sizeof(Color));
+
+    Image image = {
+        .data = pixels,
+        .width = width,
+        .height = height,
+        .mipmaps = 1,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
+
+    Color faintBlack = ColorAlpha(BLACK, 0.1f);
+
+    int seedCirles = 1;
+    int radius = fullRadius;
+    while (radius > rocksFromRadius)
+    {
+        ImageDrawCircleLines(&image, fullRadius, fullRadius, radius, faintBlack);
+        radius -= tileLength;
+        seedCirles++;
+    }
+    ImageDrawCircleLines(&image, fullRadius, fullRadius, radius, faintBlack);
+
+    int seedAngles = 0;
+    int angle = 0;
+    while (angle < 360)
+    {
+
+        ImageDrawLineEx(&image,
+                        (Vector2){fullRadius + radius * sinf(DEG2RAD * angle), fullRadius - radius * cosf(DEG2RAD * angle)},
+                        (Vector2){fullRadius + fullRadius * sinf(DEG2RAD * angle), fullRadius - fullRadius * cosf(DEG2RAD * angle)},
+                        1, faintBlack);
+        angle += tileDegree;
+        seedAngles++;
+    }
+
+    int seedCount = seedCirles * seedAngles;
+    Vector2 *seeds = (Vector2 *)RL_MALLOC(seedCount * sizeof(Vector2));
+    int seedIndex = 0;
+    radius = fullRadius;
+    int offset = 1;
+    while (radius > rocksFromRadius)
+    {
+        angle = 0;
+        while (angle < 360)
+        {
+            if (radius == fullRadius) {
+                offset = 5;
+            }
+
+            int seedAtRadius = GetRandomValue(radius - tileLength, radius - offset);
+            float seedAtAngle = GetRandomValue(angle * 10, (angle + tileDegree) * 10) / 10.0f;
+
+            int x = fullRadius + seedAtRadius * sinf(seedAtAngle * DEG2RAD);
+            int y = fullRadius - seedAtRadius * cosf(seedAtAngle * DEG2RAD);
+            seeds[seedIndex] = (Vector2){(float)x, (float)y};
+            seedIndex++;
+
+            if (radius == fullRadius)
+            {
+                int outOfCircleRadius = (fullRadius - seedAtRadius) * 0.6f + fullRadius + 5;
+                int x = fullRadius + outOfCircleRadius * sinf(seedAtAngle * DEG2RAD);
+                int y = fullRadius - outOfCircleRadius * cosf(seedAtAngle * DEG2RAD);
+                seeds[seedIndex] = (Vector2){(float)x, (float)y};
+                seedIndex++;
+            }
+
+            angle += tileDegree;
+        }
+        radius -= tileLength;
+    }
+
+    for (int i = 0; i < seedCount; i++)
+    {
+        ImageDrawCircleV(&image, seeds[i], 2, RED);
+    }
+
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            float pointRadius = hypot(x - fullRadius, y - fullRadius);
+            if (pointRadius < rocksFromRadius || pointRadius > fullRadius - tileLength/2)
+            {
+                continue;
+            }
+
+            float minDistance = width + height;
+            float secondMinDistance = width + height;
+            for (int i = 0; i < seedCount; i++)
+            {
+                float dist = hypot(x - seeds[i].x, y - seeds[i].y);
+                float lastMinDistance = minDistance;
+                minDistance = (float)fmin(minDistance, dist);
+                if (minDistance != lastMinDistance)
+                {
+                    secondMinDistance = lastMinDistance;
+                }
+                else
+                {
+                    secondMinDistance = (float)fmin(secondMinDistance, dist);
+                }
+            }
+            if (!ColorIsEqual(BLANK, pixels[y * width + x]))
+            {
+                continue;
+            }
+
+            if (secondMinDistance - minDistance > 1)
+            {
+                pixels[y * width + x] = WHITE;
+            }
+            else
+            {
+                pixels[y * width + x] = BLACK;
+            }
+        }
+    }
+
+    for (int i = 0; i < seedCount; i++)
+    {
+        ImageDrawCircleV(&image, seeds[i], 2, RED);
+    }
+
+    RL_FREE(seeds);
+
+    return image;
+}
+
+int main(void)
 {
     // Initialization
     //--------------------------------------------------------------------------------------
@@ -187,7 +317,7 @@ int main2(void)
                 reGenerate = false;
             }
             TraceLog(LOG_INFO, "Using border %f", border);
-            cellular = GenImageRocks(screenWidth, 64, 4, border);
+            cellular = GenImageRocksPlanet(450, 50, 6, 10);
             texture = LoadTextureFromImage(cellular);
         }
 
