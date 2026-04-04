@@ -68,6 +68,9 @@ typedef struct WorldConfig
     float cloudWidth[2];
     float cloudHeight[2];
     float cloudFloatingHeight[2];
+    int rockHatchTileSize;
+    int rockHatchSeedOffset;
+    float rockHatchBorder;
 } WorldConfig;
 
 typedef enum
@@ -216,14 +219,14 @@ int main(void)
     srand(time(NULL));
     InitGame(&game, width, height);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-    SetConfigFlags(FLAG_MSAA_4X_HINT); 
+    SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(width, height, "Walk");
 
-    Image rocksImage = GenImageRocks(game.world.floor.radius * 2, 64, 6, 1.5f);
+    Image rocksImage = GenImageRocks(game.world.floor.radius * 2,
+                                     game.config.world.rockHatchTileSize, game.config.world.rockHatchSeedOffset, game.config.world.rockHatchBorder);
     game.world.floorTexture = LoadTextureFromImage(rocksImage);
     SetTextureFilter(game.world.floorTexture, TEXTURE_FILTER_POINT);
     UnloadImage(rocksImage);
-
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
@@ -313,6 +316,10 @@ void InitGame(Game *game, int width, int height)
 #pragma region Config
 
     game->config.world.floorRadius = 800;
+    game->config.world.rockHatchTileSize = 64;
+    game->config.world.rockHatchSeedOffset = 6;
+    game->config.world.rockHatchBorder = 1.3f;
+
     game->config.world.treeCount = 20;
     game->config.world.treeWidth[0] = 10;
     game->config.world.treeWidth[1] = 30;
@@ -384,17 +391,25 @@ void InitGame(Game *game, int width, int height)
     game->world.floor.radiusSeenAtRest = -worldBottomMiddleAtRest.y;
     game->display.camera.zoom = game->display.zoomWhileMoving;
     Vector2 worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
-    
+
     game->world.floor.radiusSeenWhileMoving = -worldBottomMiddleWhileMoving.y;
-    
 }
 
 void UpdateDrawFrame(void)
 {
-    if (IsKeyPressed(KEY_Z)) {
+    if (IsKeyPressed(KEY_Z))
+    {
         Vector2 worldCenterAt = GetWorldToScreen2D((Vector2){0, 0}, game.display.camera);
         Vector2 worldPointAt = GetWorldToScreen2D((Vector2){game.world.floor.radius, 0}, game.display.camera);
         TraceLog(LOG_INFO, "World Radius %f", Vector2Distance(worldPointAt, worldCenterAt));
+    }
+    if (IsKeyReleased(KEY_R))
+    {
+        Image rocksImage = GenImageRocks(game.world.floor.radius * 2,
+                                         game.config.world.rockHatchTileSize, game.config.world.rockHatchSeedOffset, game.config.world.rockHatchBorder);
+        game.world.floorTexture = LoadTextureFromImage(rocksImage);
+        SetTextureFilter(game.world.floorTexture, TEXTURE_FILTER_POINT);
+        UnloadImage(rocksImage);
     }
 
     float deltaTime = GetFrameTime();
@@ -560,15 +575,11 @@ void UpdateDrawFrame(void)
                 BLACK);
         }
 
-        
-        
-        DrawTextureEx(game.world.floorTexture, (Vector2) {-floorRadius, -floorRadius}, 0, 1.0f, WHITE);
+        DrawTextureEx(game.world.floorTexture, (Vector2){-floorRadius, -floorRadius}, 0, 1.0f, WHITE);
         // Draw Floor
         DrawRing((Vector2){0, 0}, floorRadius - 2, floorRadius, 0, 360, 360, BROWN);
-        
 
-        //DrawCircleSector((Vector2){0, 0}, game.world.floor.radiusSeenAtRest, 0, 360, 360, WHITE);
-        
+        // DrawCircleSector((Vector2){0, 0}, game.world.floor.radiusSeenAtRest, 0, 360, 360, WHITE);
 
         if (config.editor.showAngleValues)
         {
@@ -592,7 +603,7 @@ void UpdateDrawFrame(void)
                 DrawLineV(game.world.radialOutStarts[i], game.world.radialOutEnds[i], GRAY);
             }
         }
-        
+
         DrawText(TextFormat("FPS %d", GetFPS()), 0, 0, 30, RED);
         {
             // Check collisions
