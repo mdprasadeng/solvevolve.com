@@ -7,6 +7,7 @@
 #include <time.h>
 #include "stb_perlin.h"
 
+
 Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
 {
     int height = width;
@@ -184,7 +185,8 @@ Image GenImageRocksPlanet(int fullRadius, int tileLength, int tileRadialCount, f
         angle = 0;
         while (angle < 360)
         {
-            if (radius == fullRadius) {
+            if (radius == fullRadius)
+            {
                 offset = 5;
             }
 
@@ -220,7 +222,7 @@ Image GenImageRocksPlanet(int fullRadius, int tileLength, int tileRadialCount, f
         for (int x = 0; x < width; x++)
         {
             float pointRadius = hypot(x - fullRadius, y - fullRadius);
-            if (pointRadius < rocksFromRadius || pointRadius > fullRadius - tileLength/2)
+            if (pointRadius < rocksFromRadius || pointRadius > fullRadius - tileLength / 2)
             {
                 continue;
             }
@@ -267,7 +269,98 @@ Image GenImageRocksPlanet(int fullRadius, int tileLength, int tileRadialCount, f
     return image;
 }
 
-int main(void)
+Image GenImageRocksRadial(int fullRadius, int fromRadius, int seedCount, float powFactor)
+{
+    int width = fullRadius * 2;
+    int height = fullRadius * 2;
+    Color *pixels = (Color *)RL_MALLOC(width * height * sizeof(Color));
+
+    Image image = {
+        .data = pixels,
+        .width = width,
+        .height = height,
+        .mipmaps = 1,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
+
+    
+
+    Vector2 *seeds = (Vector2 *)RL_MALLOC(seedCount * sizeof(Vector2));
+    for (int i = 0; i < seedCount; i++)
+    {
+        float factor = randomFloat(0.0f, 1.0f);
+        factor = powf(factor, powFactor);
+        int seedAtRadius = fromRadius + (fullRadius - fromRadius) * factor;
+        float seedAtAngle = GetRandomValue(0, 360 * 10) / 10.0f;
+
+        int x = fullRadius + seedAtRadius * sinf(seedAtAngle * DEG2RAD);
+        int y = fullRadius - seedAtRadius * cosf(seedAtAngle * DEG2RAD);
+        seeds[i] = (Vector2){(float)x, (float)y};
+    }
+
+    
+
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            float pointRadius = hypot(x - fullRadius, y - fullRadius);
+            if (pointRadius < fromRadius || pointRadius > fullRadius)
+            {
+                continue;
+            }
+
+            // Inside your x/y loop, before calculating distances:
+            float noiseScale = 0.03f;    // Frequency of the "wiggles"
+            float noiseIntensity = 3.0f; // Magnitude of the "wiggles" (in pixels)
+
+            // Calculate offsets using Perlin noise
+            float offsetX = stb_perlin_noise3((float)x * noiseScale, (float)y * noiseScale, 0, 0, 0, 0) * noiseIntensity;
+            float offsetY = stb_perlin_noise3((float)y * noiseScale, (float)x * noiseScale, 1.0f, 0, 0, 0) * noiseIntensity;
+
+            // Use these "warped" coordinates for the distance check
+            float warpedX = (float)x + offsetX;
+            float warpedY = (float)y + offsetY;
+
+
+            float minDistance = width + height;
+            float secondMinDistance = width + height;
+            for (int i = 0; i < seedCount; i++)
+            {
+                float dist = hypot(warpedX - seeds[i].x, warpedY - seeds[i].y);
+                float lastMinDistance = minDistance;
+                minDistance = (float)fmin(minDistance, dist);
+                if (minDistance != lastMinDistance)
+                {
+                    secondMinDistance = lastMinDistance;
+                }
+                else
+                {
+                    secondMinDistance = (float)fmin(secondMinDistance, dist);
+                }
+            }
+            if (!ColorIsEqual(BLANK, pixels[y * width + x]))
+            {
+                continue;
+            }
+
+            if (secondMinDistance - minDistance >= 1.0f)
+            {
+                pixels[y * width + x] = BROWN;
+            }
+            else
+            {
+                pixels[y * width + x] = WHITE;
+            }
+        }
+    }
+
+
+    RL_FREE(seeds);
+
+    return image;
+}
+
+int main2(void)
 {
     // Initialization
     //--------------------------------------------------------------------------------------
@@ -284,23 +377,23 @@ int main(void)
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
-    float border = 0.5f;
+    float powFactor = 0.25f;
 
     // Main game loop
     while (!WindowShouldClose()) // Detect window close button or ESC key
     {
         if (IsKeyPressed(KEY_UP))
         {
-            border += 0.1f;
+            powFactor += 0.01f;
             reGenerate = true;
         }
 
         if (IsKeyPressed(KEY_DOWN))
         {
-            border -= 0.1f;
-            if (border <= 0.1f)
+            powFactor -= 0.01f;
+            if (powFactor <= 0.1f)
             {
-                border = 0.1f;
+                powFactor = 0.1f;
             }
             reGenerate = true;
         }
@@ -316,8 +409,8 @@ int main(void)
             {
                 reGenerate = false;
             }
-            TraceLog(LOG_INFO, "Using border %f", border);
-            cellular = GenImageRocksPlanet(450, 50, 6, 5);
+            TraceLog(LOG_INFO, "Using border %f", powFactor);
+            cellular = GenImageRocksRadial(450, 50, 200, powFactor);
             texture = LoadTextureFromImage(cellular);
         }
 

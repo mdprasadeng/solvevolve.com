@@ -222,8 +222,7 @@ int main(void)
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(width, height, "Walk");
 
-    Image rocksImage = GenImageRocks(game.world.floor.radius * 2,
-                                     game.config.world.rockHatchTileSize, game.config.world.rockHatchSeedOffset, game.config.world.rockHatchBorder);
+    Image rocksImage = GenImageRocksRadial(game.world.floor.radius, 0, 400, 0.13f);
     game.world.floorTexture = LoadTextureFromImage(rocksImage);
     SetTextureFilter(game.world.floorTexture, TEXTURE_FILTER_POINT);
     UnloadImage(rocksImage);
@@ -405,8 +404,11 @@ void UpdateDrawFrame(void)
     }
     if (IsKeyReleased(KEY_R))
     {
-        Image rocksImage = GenImageRocks(game.world.floor.radius * 2,
-                                         game.config.world.rockHatchTileSize, game.config.world.rockHatchSeedOffset, game.config.world.rockHatchBorder);
+        Image rocksImage;
+        // rocksImage = GenImageRocks(game.world.floor.radius * 2,
+        //                                  game.config.world.rockHatchTileSize, game.config.world.rockHatchSeedOffset, game.config.world.rockHatchBorder);
+        
+        rocksImage = GenImageRocksRadial(game.world.floor.radius, game.world.floor.radiusSeenAtRest, 200, 0.23f);
         game.world.floorTexture = LoadTextureFromImage(rocksImage);
         SetTextureFilter(game.world.floorTexture, TEXTURE_FILTER_POINT);
         UnloadImage(rocksImage);
