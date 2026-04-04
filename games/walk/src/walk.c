@@ -232,10 +232,12 @@ int main(void)
     srand(time(NULL));
     InitGame(&game, width, height);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    SetConfigFlags(FLAG_MSAA_4X_HINT); 
     InitWindow(width, height, "Walk");
 
-    Image rocksImage = GenImageRocks(game.world.floor.radius * 2 * 4, 256, 12, 1.f);
+    Image rocksImage = GenImageRocks(game.world.floor.radius * 2, 64, 6, 1.5f);
     game.world.floorTexture = LoadTextureFromImage(rocksImage);
+    SetTextureFilter(game.world.floorTexture, TEXTURE_FILTER_POINT);
     UnloadImage(rocksImage);
 
 
@@ -455,6 +457,7 @@ void InitGame(Game *game, int width, int height)
     game->display.zoomWhileMoving = width / chordLengthWhileMoving;
     game->display.zoomStart = game->display.zoomWhileMoving;
     game->display.zoomEnd = game->display.zoomWhileMoving;
+    float overviewZoom = width / (game->config.world.floorRadius * 5.0f);
 
     game->display.camera = (Camera2D){
         .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
@@ -465,13 +468,14 @@ void InitGame(Game *game, int width, int height)
         .offset = {width * 0.5f, height * 0.5f},
         .target = (Vector2){0, 0},
         .rotation = 0,
-        .zoom = width / (game->config.world.floorRadius * 5.0f)};
+        .zoom = overviewZoom};
 
     game->display.camera.zoom = game->display.zoomAtRest;
     Vector2 worldBottomMiddleAtRest = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
     game->world.floor.radiusSeenAtRest = -worldBottomMiddleAtRest.y;
     game->display.camera.zoom = game->display.zoomWhileMoving;
     Vector2 worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
+    
     game->world.floor.radiusSeenWhileMoving = -worldBottomMiddleWhileMoving.y;
 
     game->world.floor.bouldersCountAtRest = (int)floorf((2 * PI * game->world.floor.radiusSeenWhileMoving) / (2 * game->config.world.boulderRadius * 1.25f));
@@ -481,6 +485,11 @@ void InitGame(Game *game, int width, int height)
 
 void UpdateDrawFrame(void)
 {
+    if (IsKeyPressed(KEY_Z)) {
+        Vector2 worldCenterAt = GetWorldToScreen2D((Vector2){0, 0}, game.display.camera);
+        Vector2 worldPointAt = GetWorldToScreen2D((Vector2){game.world.floor.radius, 0}, game.display.camera);
+        TraceLog(LOG_INFO, "World Radius %f", Vector2Distance(worldPointAt, worldCenterAt));
+    }
 
     float deltaTime = GetFrameTime();
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
@@ -646,8 +655,8 @@ void UpdateDrawFrame(void)
         }
 
         
-
-        DrawTextureEx(game.world.floorTexture, (Vector2) {-floorRadius, -floorRadius}, 0, 0.25f, WHITE);
+        
+        DrawTextureEx(game.world.floorTexture, (Vector2) {-floorRadius, -floorRadius}, 0, 1.0f, WHITE);
         // Draw Floor
         DrawRing((Vector2){0, 0}, floorRadius - 2, floorRadius, 0, 360, 360, BROWN);
         

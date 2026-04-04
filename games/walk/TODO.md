@@ -86,6 +86,7 @@ Rock pattern
 * Observe and interact 
     * wait for a flower to bloom and then get bees and flower in same frame for bees to find flowers
     * wait for a egg to hatch and get mother bird and baby in the same frame
+    * crows on a dried tree that come back
 
 
 ## Principles
