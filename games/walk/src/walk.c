@@ -56,12 +56,6 @@ typedef struct Floor
     float radius;
     float radiusSeenWhileMoving;
     float radiusSeenAtRest;
-    float bouldersCountAtRest;
-    int totalRocks;
-    int *pointsPerRock;
-    float *boundingRadiusPerRock;
-    Vector2 *rockCenters;
-    Vector2 *rockPoints;
 } Floor;
 
 typedef struct WorldConfig
@@ -74,15 +68,6 @@ typedef struct WorldConfig
     float cloudWidth[2];
     float cloudHeight[2];
     float cloudFloatingHeight[2];
-    int totalRocks;
-    int rockPointsRange[2];
-    float rockRadiusRange[2];
-    int pebbleCorners;
-    int rockCorners;
-    int boulderCorners;
-    float pebbleRadius;
-    float rockRadius;
-    float boulderRadius;
 } WorldConfig;
 
 typedef enum
@@ -132,7 +117,6 @@ typedef struct EditorConfig
     bool showDemoWindow;
     bool showAngleValues;
     bool showRadialLines;
-    bool showRockCircles;
 } EditorConfig;
 
 typedef struct ContorlsConfig
@@ -295,70 +279,10 @@ void GenerateClouds(Game *game)
     }
 }
 
-void GenerateRocks(Game *game)
-{
-    World *world = &game->world;
-    WorldConfig params = game->config.world;
-
-    world->floor.totalRocks = params.totalRocks;
-    world->floor.pointsPerRock = (int *)malloc(params.totalRocks * sizeof(int));
-    world->floor.boundingRadiusPerRock = (float *)malloc(params.totalRocks * sizeof(float));
-    int totalPoints = 0;
-    for (size_t i = 0; i < params.totalRocks; i++)
-    {
-        world->floor.pointsPerRock[i] = randomInt(params.rockPointsRange[0], params.rockPointsRange[1]);
-        world->floor.boundingRadiusPerRock[i] = randomFloat(params.rockRadiusRange[0], params.rockRadiusRange[1]);
-        totalPoints += world->floor.pointsPerRock[i];
-    }
-    world->floor.rockPoints = (Vector2 *)malloc(totalPoints * sizeof(Vector2));
-    int pointsIterated = 0;
-    for (size_t i = 0; i < params.totalRocks; i++)
-    {
-        float angleCovered = 0;
-        float rockRadius = world->floor.boundingRadiusPerRock[i];
-        float rockOffset = rockRadius * 0.2f;
-        for (int j = 0; j < world->floor.pointsPerRock[i]; j++)
-        {
-
-            float averageAngle = (360 - angleCovered) / ((world->floor.pointsPerRock)[i] - j);
-            float minAngleOffset = averageAngle * 0.75f;
-            float maxAngleOffset = averageAngle * 1.25f;
-            float newAngle = randomFloat(minAngleOffset, maxAngleOffset);
-            angleCovered += newAngle;
-            (world->floor.rockPoints)[pointsIterated] = (Vector2){
-                -rockRadius * cosf(angleCovered * DEG2RAD) + randomFloat(-rockOffset, 0),
-                rockRadius * sinf(angleCovered * DEG2RAD) + randomFloat(-rockOffset, 0)};
-            pointsIterated++;
-        }
-    }
-    pointsIterated = 0;
-
-    world->floor.rockCenters = (Vector2 *)malloc(params.totalRocks * sizeof(Vector2));
-    for (int i = 0; i < params.totalRocks; i++)
-    {
-        float rockAtRadius = params.floorRadius - world->floor.boundingRadiusPerRock[i] - 10; // 10 is just an extra offset to make sure rocks dont intersect with the world border
-        rockAtRadius = rockAtRadius * randomFloat(0.9f, 1.0f);                                // add some noise to the radius of the rock to make it look more natural
-        float gapAngle = (2 * PI) / params.totalRocks;
-        gapAngle = gapAngle * randomFloat(0.95f, 1.0f); // add some noise to the angle between rocks to make it look more natural
-        float rockAngle = (gapAngle * i);
-        Vector2 rockCenter = (Vector2){
-            -rockAtRadius * cosf(rockAngle),
-            rockAtRadius * sinf(rockAngle)};
-        for (size_t j = 0; j < world->floor.pointsPerRock[i]; j++)
-        {
-            world->floor.rockPoints[pointsIterated + j].x += rockCenter.x;
-            world->floor.rockPoints[pointsIterated + j].y += rockCenter.y;
-        }
-        pointsIterated += world->floor.pointsPerRock[i];
-        world->floor.rockCenters[i] = rockCenter;
-    }
-}
-
 void GenerateWorld(Game *game)
 {
     GenerateTrees(game);
     GenerateClouds(game);
-    GenerateRocks(game);
     float floorRadius = game->config.world.floorRadius;
     game->world.radialLinesCount = 360;
     for (int i = 0; i < game->world.radialLinesCount; i++)
@@ -378,9 +302,6 @@ void GenerateWorld(Game *game)
 void FreeGame(Game *game)
 {
     World world = game->world;
-    free(world.floor.rockPoints);
-    free(world.floor.pointsPerRock);
-    free(world.floor.boundingRadiusPerRock);
     free(world.trees);
     free(world.clouds);
 }
@@ -404,17 +325,6 @@ void InitGame(Game *game, int width, int height)
     game->config.world.cloudHeight[1] = 60;
     game->config.world.cloudFloatingHeight[0] = 85;
     game->config.world.cloudFloatingHeight[1] = 250;
-    game->config.world.totalRocks = 0;
-    game->config.world.rockPointsRange[0] = 9;
-    game->config.world.rockPointsRange[1] = 13;
-    game->config.world.rockRadiusRange[0] = 10;
-    game->config.world.rockRadiusRange[1] = 20;
-    game->config.world.pebbleCorners = 5;
-    game->config.world.rockCorners = 5;
-    game->config.world.boulderCorners = 8;
-    game->config.world.pebbleRadius = 2.0f;
-    game->config.world.rockRadius = 8.0f;
-    game->config.world.boulderRadius = 12.0f;
 
     game->config.camera.angleShowAtRest = 60;
     game->config.camera.angleShowWhileMoving = 20;
@@ -433,7 +343,6 @@ void InitGame(Game *game, int width, int height)
     game->config.editor.showDemoWindow = false;
     game->config.editor.showAngleValues = true;
     game->config.editor.showRadialLines = false;
-    game->config.editor.showRockCircles = false;
 
     game->config.controls.maxDurationForQuickTap = 20.0f / 60.f;
 
@@ -477,9 +386,6 @@ void InitGame(Game *game, int width, int height)
     Vector2 worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
     
     game->world.floor.radiusSeenWhileMoving = -worldBottomMiddleWhileMoving.y;
-
-    game->world.floor.bouldersCountAtRest = (int)floorf((2 * PI * game->world.floor.radiusSeenWhileMoving) / (2 * game->config.world.boulderRadius * 1.25f));
-
     
 }
 
@@ -686,41 +592,7 @@ void UpdateDrawFrame(void)
                 DrawLineV(game.world.radialOutStarts[i], game.world.radialOutEnds[i], GRAY);
             }
         }
-        if (config.editor.showRockCircles)
-        {
-
-            DrawCircleLines(0, 0, game.world.floor.radiusSeenAtRest, BLACK);
-            DrawCircleLines(0, 0, game.world.floor.radiusSeenWhileMoving, BLACK);
-            float drawAtRadius = game.world.floor.radius - 5 - game.config.world.boulderRadius;
-            bool offset = false;
-            while (true)
-            {
-                for (size_t i = 0; i < game.world.floor.bouldersCountAtRest; i++)
-                {
-                    float angleInRad = DEG2RAD * (360.0f / game.world.floor.bouldersCountAtRest) * i;
-                    if (offset)
-                    {
-                        angleInRad += DEG2RAD * (360.0f / game.world.floor.bouldersCountAtRest) * 0.5f;
-                    }
-                    DrawCircleLines(
-                        drawAtRadius * sinf(angleInRad),
-                        -drawAtRadius * cosf(angleInRad),
-                        game.config.world.boulderRadius - 1,
-                        BLACK);
-                    DrawCircle(
-                        drawAtRadius * sinf(angleInRad),
-                        -drawAtRadius * cosf(angleInRad),
-                        game.config.world.boulderRadius - 1,
-                        WHITE);
-                }
-                drawAtRadius -= 2 * game.config.world.boulderRadius;
-                offset = !offset;
-                if (drawAtRadius + game.config.world.boulderRadius < game.world.floor.radiusSeenAtRest)
-                {
-                    break;
-                }
-            }
-        }
+        
         DrawText(TextFormat("FPS %d", GetFPS()), 0, 0, 30, RED);
         {
             // Check collisions
@@ -806,21 +678,6 @@ void UpdateDrawFrame(void)
         if (game.world.allVisited)
         {
             DrawCircleV((Vector2){0, -floorRadius}, 20, RED);
-        }
-
-        int pointsDrawn = 0;
-        for (int i = 0; i < game.world.floor.totalRocks; i++)
-        {
-            for (size_t j = 0; j < game.world.floor.pointsPerRock[i]; j++)
-            {
-                Vector2 p0 = game.world.floor.rockPoints[pointsDrawn + j];
-                Vector2 p1 = game.world.floor.rockPoints[pointsDrawn + (j + 1) % game.world.floor.pointsPerRock[i]];
-                DrawLineEx(p0, p1, 1, GRAY);
-                DrawCircleV(p0, 0.4f, GRAY);
-            }
-
-            // Close the polygon with circle at last vertex too (from j loop it already draws p0 for last edge)
-            pointsDrawn += game.world.floor.pointsPerRock[i];
         }
 
         // Draw Trees
