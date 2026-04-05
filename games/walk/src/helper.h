@@ -8,10 +8,16 @@ Color toColor(float col[4])
     return color;
 };
 
+#ifndef RANDOM_FLOAT
+
 float randomFloat(float min, float max)
 {
     return min + (max - min) * ((float)rand() / (float)RAND_MAX);
 }
+
+#define RANDOM_FLOAT
+
+#endif
 
 int randomInt(int min, int max)
 {

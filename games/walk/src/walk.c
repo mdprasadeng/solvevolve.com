@@ -19,7 +19,7 @@
 
 #pragma endregion
 
-#pragma region World - Data
+#pragma region World-Data
 typedef enum PlayerState
 {
     PLAYER_STATE_IDLE_LEFT = 0,
@@ -287,6 +287,7 @@ void GenerateWorld(Game *game)
         game->world.floor.radius * 2 * 4,
         game->world.floor.radiusSeenAtRest * 4,
         game->config.world.rockHatchTileSize, game->config.world.rockHatchSeedOffset, game->config.world.rockHatchBorder);
+    //rocksImage = GenImageRocksRadial( game->world.floor.radius * 2, 0, 300, 0.9f);
     game->world.floorTexture = LoadTextureFromImage(rocksImage);
     UnloadImage(rocksImage);
 }

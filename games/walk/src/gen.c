@@ -7,6 +7,16 @@
 #include <time.h>
 #include "stb_perlin.h"
 
+#ifndef RANDOM_FLOAT
+
+float randomFloat(float min, float max)
+{
+    return min + (max - min) * ((float)rand() / (float)RAND_MAX);
+}
+
+#define RANDOM_FLOAT
+
+#endif
 
 Image GenImageRocks(int width, int innerRadius, int tileSize, int seedOffset, float border)
 {
@@ -35,7 +45,8 @@ Image GenImageRocks(int width, int innerRadius, int tileSize, int seedOffset, fl
         for (int x = 0; x < width; x++)
         {
             float radDist = hypot(x - radius, y - radius);
-            if (radDist > radius || radDist < innerRadius) {
+            if (radDist > radius || radDist < innerRadius)
+            {
                 continue;
             }
 
@@ -90,7 +101,7 @@ Image GenImageRocks(int width, int innerRadius, int tileSize, int seedOffset, fl
 
             unsigned char intensityUC = (unsigned char)intensity;
             pixels[y * width + x] = (Color){intensityUC, intensityUC, intensityUC, 255};
-            
+
             if (secondMinDistance - minDistance < border * 0.1f * minDistance)
             {
                 pixels[y * width + x] = WHITE;
@@ -282,22 +293,33 @@ Image GenImageRocksRadial(int fullRadius, int fromRadius, int seedCount, float p
         .mipmaps = 1,
         .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
 
-    
-
     Vector2 *seeds = (Vector2 *)RL_MALLOC(seedCount * sizeof(Vector2));
     for (int i = 0; i < seedCount; i++)
     {
-        float factor = randomFloat(0.0f, 1.0f);
-        factor = powf(factor, powFactor);
-        int seedAtRadius = fromRadius + (fullRadius - fromRadius) * factor;
-        float seedAtAngle = GetRandomValue(0, 360 * 10) / 10.0f;
+        while (true)
+        {
+            float factor = randomFloat(0.0f, 1.0f);
+            factor = powf(factor, powFactor);
+            int seedAtRadius = fromRadius + (fullRadius - fromRadius) * factor;
+            float seedAtAngle = GetRandomValue(0, 360 * 10) / 10.0f;
 
-        int x = fullRadius + seedAtRadius * sinf(seedAtAngle * DEG2RAD);
-        int y = fullRadius - seedAtRadius * cosf(seedAtAngle * DEG2RAD);
-        seeds[i] = (Vector2){(float)x, (float)y};
+            int x = fullRadius + seedAtRadius * sinf(seedAtAngle * DEG2RAD);
+            int y = fullRadius - seedAtRadius * cosf(seedAtAngle * DEG2RAD);
+            seeds[i] = (Vector2){(float)x, (float)y};
+            bool anotherPointNearby = false;
+            for (int j=0; j < i; j++) {
+                if (Vector2Distance(seeds[j], seeds[i]) < 5) {
+                    anotherPointNearby = true;
+                    break;
+                }
+            }
+            if (anotherPointNearby) {
+                continue;
+            }
+            break;
+            
+        }
     }
-
-    
 
     for (int y = 0; y < height; y++)
     {
@@ -320,7 +342,6 @@ Image GenImageRocksRadial(int fullRadius, int fromRadius, int seedCount, float p
             // Use these "warped" coordinates for the distance check
             float warpedX = (float)x + offsetX;
             float warpedY = (float)y + offsetY;
-
 
             float minDistance = width + height;
             float secondMinDistance = width + height;
@@ -354,11 +375,12 @@ Image GenImageRocksRadial(int fullRadius, int fromRadius, int seedCount, float p
         }
     }
 
-
     RL_FREE(seeds);
 
     return image;
 }
+
+// Image GenImageRocksSquareRadial(int fullRadius, int tileSize,  )
 
 int main2(void)
 {
@@ -377,7 +399,7 @@ int main2(void)
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
-    float powFactor = 0.25f;
+    float powFactor = 0.09;
 
     // Main game loop
     while (!WindowShouldClose()) // Detect window close button or ESC key
@@ -409,9 +431,10 @@ int main2(void)
             {
                 reGenerate = false;
             }
-            TraceLog(LOG_INFO, "Using border %f", powFactor);
-            cellular = GenImageRocksRadial(450, 50, 200, powFactor);
+            TraceLog(LOG_INFO, "Generating with powFactor %f at: %f", powFactor, GetTime());
+            cellular = GenImageRocksRadial(450, 0, 600, powFactor);
             texture = LoadTextureFromImage(cellular);
+            TraceLog(LOG_INFO, "Generation done powFactor %f at: %f", powFactor, GetTime());
         }
 
         // Update
@@ -425,7 +448,7 @@ int main2(void)
 
         ClearBackground(RAYWHITE);
 
-        DrawTexture(texture, 0, 0, WHITE);
+        DrawTextureEx(texture, (Vector2) {0, 0}, 0, 1.f, WHITE);
 
         EndDrawing();
         //----------------------------------------------------------------------------------
