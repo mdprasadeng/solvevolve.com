@@ -8,7 +8,7 @@
 #include "stb_perlin.h"
 
 
-Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
+Image GenImageRocks(int width, int innerRadius, int tileSize, int seedOffset, float border)
 {
     int height = width;
     Color *pixels = (Color *)RL_MALLOC(width * height * sizeof(Color));
@@ -34,6 +34,11 @@ Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
 
         for (int x = 0; x < width; x++)
         {
+            float radDist = hypot(x - radius, y - radius);
+            if (radDist > radius || radDist < innerRadius) {
+                continue;
+            }
+
             // Inside your x/y loop, before calculating distances:
             float noiseScale = 0.03f;    // Frequency of the "wiggles"
             float noiseIntensity = 3.0f; // Magnitude of the "wiggles" (in pixels)
@@ -85,13 +90,8 @@ Image GenImageRocks(int width, int tileSize, int seedOffset, float border)
 
             unsigned char intensityUC = (unsigned char)intensity;
             pixels[y * width + x] = (Color){intensityUC, intensityUC, intensityUC, 255};
-            int cx = x - radius;
-            int cy = y - radius;
-            if (cx * cx + cy * cy > radius * radius)
-            {
-                pixels[y * width + x] = BLANK;
-            }
-            else if (secondMinDistance - minDistance < border * 0.1f * minDistance)
+            
+            if (secondMinDistance - minDistance < border * 0.1f * minDistance)
             {
                 pixels[y * width + x] = WHITE;
             }

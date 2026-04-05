@@ -19,7 +19,7 @@
 
 #pragma endregion
 
-#pragma region Data
+#pragma region World - Data
 typedef enum PlayerState
 {
     PLAYER_STATE_IDLE_LEFT = 0,
@@ -58,20 +58,27 @@ typedef struct Floor
     float radiusSeenAtRest;
 } Floor;
 
-typedef struct WorldConfig
+typedef struct World
 {
-    float floorRadius;
-    int treeCount;
-    float treeWidth[2];
-    float treeHeight[2];
-    int cloudCount;
-    float cloudWidth[2];
-    float cloudHeight[2];
-    float cloudFloatingHeight[2];
-    int rockHatchTileSize;
-    int rockHatchSeedOffset;
-    float rockHatchBorder;
-} WorldConfig;
+    Floor floor;
+    Tree *trees;
+    int treesCount;
+    Cloud *clouds;
+    int cloudsCount;
+
+    int viewlineCount;
+    Vector2 skyViewlineStarts[360];
+    Vector2 skyViewlineEnds[360];
+    Vector2 earthViewlineStarts[360];
+    bool visted[360];
+    bool allVisited;
+    Texture2D floorTexture;
+} World;
+
+typedef struct Controls
+{
+    float tappedDuration;
+} Controls;
 
 typedef enum
 {
@@ -89,6 +96,42 @@ typedef enum
     EASE_EXPONENTIAL_OUT,
 
 } EaseType;
+
+typedef struct Display
+{
+    int width;
+    int height;
+    Camera2D camera;
+    Camera2D worldCamera;
+    float zoomAtRest;
+    float zoomWhileMoving;
+
+    EaseType zoomEaseType;
+    float zoomStart;
+    float zoomEnd;
+    float zoomTime;
+    float elapsedZoomTime;
+
+} Display;
+
+#pragma endregion
+
+#pragma region Config-Data
+
+typedef struct WorldConfig
+{
+    float floorRadius;
+    int treeCount;
+    float treeWidth[2];
+    float treeHeight[2];
+    int cloudCount;
+    float cloudWidth[2];
+    float cloudHeight[2];
+    float cloudFloatingHeight[2];
+    int rockHatchTileSize;
+    int rockHatchSeedOffset;
+    float rockHatchBorder;
+} WorldConfig;
 
 typedef struct CameraConfig
 {
@@ -143,49 +186,7 @@ typedef struct Config
     PlayerConfig player;
 } Config;
 
-typedef struct World
-{
-    Floor floor;
-    Tree *trees;
-    int treesCount;
-    Cloud *clouds;
-    int cloudsCount;
-
-    int radialLinesCount;
-    Vector2 radialOutStarts[360];
-    Vector2 radialOutEnds[360];
-    Vector2 radialInStarts[360];
-    bool visted[360];
-    bool allVisited;
-    Texture2D floorTexture;
-} World;
-
-typedef struct Hud
-{
-} Hud;
-
-typedef struct Controls
-{
-    float tappedDuration;
-} Controls;
-
-typedef struct Display
-{
-    int width;
-    int height;
-    Camera2D camera;
-    Camera2D worldCamera;
-    float zoomAtRest;
-    float zoomWhileMoving;
-
-    EaseType zoomEaseType;
-    float zoomStart;
-    float zoomEnd;
-    float zoomTime;
-    float elapsedZoomTime;
-
-    Hud hud;
-} Display;
+#pragma endregion
 
 typedef struct Game
 {
@@ -196,13 +197,13 @@ typedef struct Game
     Controls controls;
 } Game;
 
-#pragma endregion
-
 Game game;
 
+#pragma region func definitions
 void InitGame(Game *game, int width, int height);
 void FreeGame(Game *game);
 void UpdateDrawFrame(void);
+#pragma endregion
 
 int main(void)
 {
@@ -217,15 +218,10 @@ int main(void)
 #endif
 
     srand(time(NULL));
-    InitGame(&game, width, height);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(width, height, "Walk");
-
-    Image rocksImage = GenImageRocksRadial(game.world.floor.radius, 0, 400, 0.13f);
-    game.world.floorTexture = LoadTextureFromImage(rocksImage);
-    SetTextureFilter(game.world.floorTexture, TEXTURE_FILTER_POINT);
-    UnloadImage(rocksImage);
+    InitGame(&game, width, height);
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
@@ -285,20 +281,14 @@ void GenerateWorld(Game *game)
 {
     GenerateTrees(game);
     GenerateClouds(game);
-    float floorRadius = game->config.world.floorRadius;
-    game->world.radialLinesCount = 360;
-    for (int i = 0; i < game->world.radialLinesCount; i++)
-    {
-        float angle = (360.0f / game->world.radialLinesCount) * i * DEG2RAD;
-        game->world.radialInStarts[i].x = (floorRadius - 15) * sinf(angle);
-        game->world.radialInStarts[i].y = -(floorRadius - 15) * cosf(angle);
-
-        game->world.radialOutStarts[i].x = (floorRadius + 15) * sinf(angle);
-        game->world.radialOutStarts[i].y = -(floorRadius + 15) * cosf(angle);
-
-        game->world.radialOutEnds[i].x = (floorRadius + 500) * sinf(angle);
-        game->world.radialOutEnds[i].y = -(floorRadius + 500) * cosf(angle);
-    }
+    // Generate rocks
+    Image rocksImage;
+    rocksImage = GenImageRocks(
+        game->world.floor.radius * 2 * 4,
+        game->world.floor.radiusSeenAtRest * 4,
+        game->config.world.rockHatchTileSize, game->config.world.rockHatchSeedOffset, game->config.world.rockHatchBorder);
+    game->world.floorTexture = LoadTextureFromImage(rocksImage);
+    UnloadImage(rocksImage);
 }
 
 void FreeGame(Game *game)
@@ -310,92 +300,127 @@ void FreeGame(Game *game)
 
 #pragma endregion
 
-void InitGame(Game *game, int width, int height)
+void InitConfig(Game *game, int width, int height)
 {
-#pragma region Config
+    // World
+    {
 
-    game->config.world.floorRadius = 800;
-    game->config.world.rockHatchTileSize = 64;
-    game->config.world.rockHatchSeedOffset = 6;
-    game->config.world.rockHatchBorder = 1.3f;
+        game->config.world.floorRadius = 800;
+        game->config.world.rockHatchTileSize = 256;
+        game->config.world.rockHatchSeedOffset = 20;
+        game->config.world.rockHatchBorder = 0.8f;
 
-    game->config.world.treeCount = 20;
-    game->config.world.treeWidth[0] = 10;
-    game->config.world.treeWidth[1] = 30;
-    game->config.world.treeHeight[0] = 50;
-    game->config.world.treeHeight[1] = 150;
-    game->config.world.cloudCount = 50;
-    game->config.world.cloudWidth[0] = 50;
-    game->config.world.cloudWidth[1] = 150;
-    game->config.world.cloudHeight[0] = 20;
-    game->config.world.cloudHeight[1] = 60;
-    game->config.world.cloudFloatingHeight[0] = 85;
-    game->config.world.cloudFloatingHeight[1] = 250;
+        game->config.world.treeCount = 20;
+        game->config.world.treeWidth[0] = 10;
+        game->config.world.treeWidth[1] = 30;
+        game->config.world.treeHeight[0] = 50;
+        game->config.world.treeHeight[1] = 150;
+        game->config.world.cloudCount = 50;
+        game->config.world.cloudWidth[0] = 50;
+        game->config.world.cloudWidth[1] = 150;
+        game->config.world.cloudHeight[0] = 20;
+        game->config.world.cloudHeight[1] = 60;
+        game->config.world.cloudFloatingHeight[0] = 85;
+        game->config.world.cloudFloatingHeight[1] = 250;
+    }
 
-    game->config.camera.angleShowAtRest = 60;
-    game->config.camera.angleShowWhileMoving = 20;
-    game->config.camera.dampenedAngle = 3;
-    game->config.camera.angleOffPlayerAtRest = 0;
-    game->config.camera.angleOffPlayerWhileMoving = 0;
-    game->config.camera.restToMoveEase = EASE_SINE_OUT;
-    game->config.camera.moveToRestEase = EASE_SINE_IN_OUT;
-    game->config.camera.angleMovePerSecond = 0.5f;
-    game->config.camera.restToMoveZoomDuration = 3.0f;
-    game->config.camera.moveToRestZoomDuration = 5.0f;
-    game->config.camera.offset = (Vector2){0.5f, 0.6f};
+    // Camera
+    {
+        game->config.camera.angleShowAtRest = 60;
+        game->config.camera.angleShowWhileMoving = 20;
+        game->config.camera.dampenedAngle = 3;
+        game->config.camera.angleOffPlayerAtRest = 0;
+        game->config.camera.angleOffPlayerWhileMoving = 0;
+        game->config.camera.restToMoveEase = EASE_SINE_OUT;
+        game->config.camera.moveToRestEase = EASE_SINE_IN_OUT;
+        game->config.camera.angleMovePerSecond = 0.5f;
+        game->config.camera.restToMoveZoomDuration = 3.0f;
+        game->config.camera.moveToRestZoomDuration = 5.0f;
+        game->config.camera.offset = (Vector2){0.5f, 0.6f};
+    }
 
+    // Editor
+    {
+        game->config.editor.showDemoWindow = false;
+        game->config.editor.showAngleValues = true;
+        game->config.editor.showRadialLines = false;
+    }
     game->config.gameplay.speedInDegreesPerSecond = 360.0f / (90);
-
-    game->config.editor.showDemoWindow = false;
-    game->config.editor.showAngleValues = true;
-    game->config.editor.showRadialLines = false;
 
     game->config.controls.maxDurationForQuickTap = 20.0f / 60.f;
 
     game->config.player.width = 10;
     game->config.player.height = 20;
+}
 
-#pragma endregion
+void InitGame(Game *game, int width, int height)
+{
+
+    InitConfig(game, width, height);
 
     game->display.width = width;
     game->display.height = height;
+
+    // Init ViewLines
+    {
+        float floorRadius = game->config.world.floorRadius;
+        game->world.viewlineCount = 360;
+        for (int i = 0; i < game->world.viewlineCount; i++)
+        {
+            float angle = (360.0f / game->world.viewlineCount) * i * DEG2RAD;
+            game->world.earthViewlineStarts[i].x = (floorRadius - 15) * sinf(angle);
+            game->world.earthViewlineStarts[i].y = -(floorRadius - 15) * cosf(angle);
+
+            game->world.skyViewlineStarts[i].x = (floorRadius + 15) * sinf(angle);
+            game->world.skyViewlineStarts[i].y = -(floorRadius + 15) * cosf(angle);
+
+            game->world.skyViewlineEnds[i].x = (floorRadius + 500) * sinf(angle);
+            game->world.skyViewlineEnds[i].y = -(floorRadius + 500) * cosf(angle);
+        }
+    }
+
+    // Init Player
+    game->player = (Player){.atAngle = 0, .state = PLAYER_STATE_MOVING_RIGHT};
+
+    // Init Camera
+    {
+        float chordLengthWhileMoving = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowWhileMoving / 2));
+        float chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
+        game->world.floor.radius = game->config.world.floorRadius;
+
+        game->display.zoomAtRest = width / chordLengthAtRest;
+        game->display.zoomWhileMoving = width / chordLengthWhileMoving;
+        game->display.zoomStart = game->display.zoomWhileMoving;
+        game->display.zoomEnd = game->display.zoomWhileMoving;
+        float overviewZoom = width / (game->config.world.floorRadius * 5.0f);
+
+        game->display.camera = (Camera2D){
+            .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
+            .target = {0, -game->config.world.floorRadius},
+            .zoom = game->display.zoomWhileMoving};
+
+        game->display.worldCamera = (Camera2D){
+            .offset = {width * 0.5f, height * 0.5f},
+            .target = (Vector2){0, 0},
+            .rotation = 0,
+            .zoom = overviewZoom};
+
+        game->display.camera.zoom = game->display.zoomAtRest;
+        Vector2 worldBottomMiddleAtRest = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
+        game->world.floor.radiusSeenAtRest = -worldBottomMiddleAtRest.y;
+        game->display.camera.zoom = game->display.zoomWhileMoving;
+        Vector2 worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
+        game->world.floor.radiusSeenWhileMoving = -worldBottomMiddleWhileMoving.y;
+
+        TraceLog(LOG_INFO, "Radius seen %f, %f", game->world.floor.radius, game->world.floor.radiusSeenAtRest);
+    }
+
     GenerateWorld(game);
-    game->player = (Player){
-        .atAngle = 0,
-        .state = PLAYER_STATE_MOVING_RIGHT};
-
-    float chordLengthWhileMoving = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowWhileMoving / 2));
-    float chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
-    game->world.floor.radius = game->config.world.floorRadius;
-
-    game->display.zoomAtRest = width / chordLengthAtRest;
-    game->display.zoomWhileMoving = width / chordLengthWhileMoving;
-    game->display.zoomStart = game->display.zoomWhileMoving;
-    game->display.zoomEnd = game->display.zoomWhileMoving;
-    float overviewZoom = width / (game->config.world.floorRadius * 5.0f);
-
-    game->display.camera = (Camera2D){
-        .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
-        .target = {0, -game->config.world.floorRadius},
-        .zoom = game->display.zoomWhileMoving};
-
-    game->display.worldCamera = (Camera2D){
-        .offset = {width * 0.5f, height * 0.5f},
-        .target = (Vector2){0, 0},
-        .rotation = 0,
-        .zoom = overviewZoom};
-
-    game->display.camera.zoom = game->display.zoomAtRest;
-    Vector2 worldBottomMiddleAtRest = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
-    game->world.floor.radiusSeenAtRest = -worldBottomMiddleAtRest.y;
-    game->display.camera.zoom = game->display.zoomWhileMoving;
-    Vector2 worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
-
-    game->world.floor.radiusSeenWhileMoving = -worldBottomMiddleWhileMoving.y;
 }
 
 void UpdateDrawFrame(void)
 {
+    float deltaTime = GetFrameTime();
     if (IsKeyPressed(KEY_Z))
     {
         Vector2 worldCenterAt = GetWorldToScreen2D((Vector2){0, 0}, game.display.camera);
@@ -404,17 +429,9 @@ void UpdateDrawFrame(void)
     }
     if (IsKeyReleased(KEY_R))
     {
-        Image rocksImage;
-        // rocksImage = GenImageRocks(game.world.floor.radius * 2,
-        //                                  game.config.world.rockHatchTileSize, game.config.world.rockHatchSeedOffset, game.config.world.rockHatchBorder);
-        
-        rocksImage = GenImageRocksRadial(game.world.floor.radius, game.world.floor.radiusSeenAtRest, 200, 0.23f);
-        game.world.floorTexture = LoadTextureFromImage(rocksImage);
-        SetTextureFilter(game.world.floorTexture, TEXTURE_FILTER_POINT);
-        UnloadImage(rocksImage);
+        GenerateWorld(&game);
     }
 
-    float deltaTime = GetFrameTime();
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
     {
         game.controls.tappedDuration = 0;
@@ -479,68 +496,70 @@ void UpdateDrawFrame(void)
             break;
         }
     }
-    float cameraToAngle = game.player.atAngle;
+
     float floorRadius = config.world.floorRadius;
 
-    float currentCameraToAngle = cameraToAngle;
-    game.display.camera.target.x = floorRadius * sinf(currentCameraToAngle * DEG2RAD);
-    game.display.camera.target.y = -floorRadius * cosf(currentCameraToAngle * DEG2RAD);
-    game.display.camera.rotation = -currentCameraToAngle;
-
-    if (game.display.zoomEnd != game.display.camera.zoom)
+    // Update Camera
     {
-        game.display.elapsedZoomTime += deltaTime;
-        if (game.display.elapsedZoomTime < game.display.zoomTime)
+        float currentCameraToAngle = game.player.atAngle;
+        game.display.camera.target.x = floorRadius * sinf(currentCameraToAngle * DEG2RAD);
+        game.display.camera.target.y = -floorRadius * cosf(currentCameraToAngle * DEG2RAD);
+        game.display.camera.rotation = -currentCameraToAngle;
+
+        if (game.display.zoomEnd != game.display.camera.zoom)
         {
-            switch (game.display.zoomEaseType)
+            game.display.elapsedZoomTime += deltaTime;
+            if (game.display.elapsedZoomTime < game.display.zoomTime)
             {
-            case EASE_LINEAR:
-                game.display.camera.zoom = EaseLinearIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            case EASE_SINE_IN:
-                game.display.camera.zoom = EaseSineIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            case EASE_SINE_IN_OUT:
-                game.display.camera.zoom = EaseSineInOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            case EASE_SINE_OUT:
-                game.display.camera.zoom = EaseSineOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            case EASE_CIRCULAR_IN:
-                game.display.camera.zoom = EaseCircIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            case EASE_CIRCULAR_OUT:
-                game.display.camera.zoom = EaseCircOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            case EASE_CUBIC_IN:
-                game.display.camera.zoom = EaseCubicIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            case EASE_CUBIC_OUT:
-                game.display.camera.zoom = EaseCubicOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            case EASE_QUADRATIC_IN:
-                game.display.camera.zoom = EaseQuadIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            case EASE_QUADRATIC_OUT:
-                game.display.camera.zoom = EaseQuadOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            case EASE_EXPONENTIAL_IN:
-                game.display.camera.zoom = EaseExpoIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            case EASE_EXPONENTIAL_OUT:
-                game.display.camera.zoom = EaseExpoOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
-                break;
-            default:
-                break;
+                switch (game.display.zoomEaseType)
+                {
+                case EASE_LINEAR:
+                    game.display.camera.zoom = EaseLinearIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                case EASE_SINE_IN:
+                    game.display.camera.zoom = EaseSineIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                case EASE_SINE_IN_OUT:
+                    game.display.camera.zoom = EaseSineInOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                case EASE_SINE_OUT:
+                    game.display.camera.zoom = EaseSineOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                case EASE_CIRCULAR_IN:
+                    game.display.camera.zoom = EaseCircIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                case EASE_CIRCULAR_OUT:
+                    game.display.camera.zoom = EaseCircOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                case EASE_CUBIC_IN:
+                    game.display.camera.zoom = EaseCubicIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                case EASE_CUBIC_OUT:
+                    game.display.camera.zoom = EaseCubicOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                case EASE_QUADRATIC_IN:
+                    game.display.camera.zoom = EaseQuadIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                case EASE_QUADRATIC_OUT:
+                    game.display.camera.zoom = EaseQuadOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                case EASE_EXPONENTIAL_IN:
+                    game.display.camera.zoom = EaseExpoIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                case EASE_EXPONENTIAL_OUT:
+                    game.display.camera.zoom = EaseExpoOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    break;
+                default:
+                    break;
+                }
+            }
+            else
+            {
+                game.display.zoomEnd = game.display.camera.zoom;
+                game.display.elapsedZoomTime = 0;
             }
         }
-        else
-        {
-            game.display.zoomEnd = game.display.camera.zoom;
-            game.display.elapsedZoomTime = 0;
-        }
     }
-
     // Render
     {
         BeginDrawing();
@@ -577,7 +596,7 @@ void UpdateDrawFrame(void)
                 BLACK);
         }
 
-        DrawTextureEx(game.world.floorTexture, (Vector2){-floorRadius, -floorRadius}, 0, 1.0f, WHITE);
+        DrawTextureEx(game.world.floorTexture, (Vector2){-floorRadius, -floorRadius}, 0, 0.25f, WHITE);
         // Draw Floor
         DrawRing((Vector2){0, 0}, floorRadius - 2, floorRadius, 0, 360, 360, BROWN);
 
@@ -599,10 +618,10 @@ void UpdateDrawFrame(void)
         }
         if (config.editor.showRadialLines)
         {
-            for (int i = 0; i < game.world.radialLinesCount; i++)
+            for (int i = 0; i < game.world.viewlineCount; i++)
             {
-                DrawLineV((Vector2){0, 0}, game.world.radialInStarts[i], GRAY);
-                DrawLineV(game.world.radialOutStarts[i], game.world.radialOutEnds[i], GRAY);
+                DrawLineV((Vector2){0, 0}, game.world.earthViewlineStarts[i], GRAY);
+                DrawLineV(game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], GRAY);
             }
         }
 
@@ -622,8 +641,8 @@ void UpdateDrawFrame(void)
                 DrawLineV(bottomLeft, topLeft, GREEN);
             }
 
-            float bottomLeftAngle = floorf((Vector2AnglePositiveDegree((Vector2){0, -1}, bottomLeft)) * (game.world.radialLinesCount / 360.0f));
-            float bottomRightAngle = ceilf((Vector2AnglePositiveDegree((Vector2){0, -1}, bottomRight)) * (game.world.radialLinesCount / 360.0f));
+            float bottomLeftAngle = floorf((Vector2AnglePositiveDegree((Vector2){0, -1}, bottomLeft)) * (game.world.viewlineCount / 360.0f));
+            float bottomRightAngle = ceilf((Vector2AnglePositiveDegree((Vector2){0, -1}, bottomRight)) * (game.world.viewlineCount / 360.0f));
             Vector2 collisionPoint;
 
             int i = bottomLeftAngle;
@@ -635,52 +654,52 @@ void UpdateDrawFrame(void)
                 }
 
                 // For rays on earth bottom screen is enough
-                if (CheckCollisionLines(bottomLeft, bottomRight, game.world.radialInStarts[i], (Vector2){0, 0}, &collisionPoint))
+                if (CheckCollisionLines(bottomLeft, bottomRight, game.world.earthViewlineStarts[i], (Vector2){0, 0}, &collisionPoint))
                 {
-                    if (Vector2LengthSqr(collisionPoint) < Vector2LengthSqr(game.world.radialInStarts[i]))
+                    if (Vector2LengthSqr(collisionPoint) < Vector2LengthSqr(game.world.earthViewlineStarts[i]))
                     {
-                        game.world.radialInStarts[i] = collisionPoint;
+                        game.world.earthViewlineStarts[i] = collisionPoint;
                         game.world.visted[i] = true;
                     }
                 }
 
                 // For rays on sky check top screen
-                if (CheckCollisionLines(topLeft, topRight, game.world.radialOutStarts[i], game.world.radialOutEnds[i], &collisionPoint))
+                if (CheckCollisionLines(topLeft, topRight, game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], &collisionPoint))
                 {
-                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.radialOutStarts[i]))
+                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.skyViewlineStarts[i]))
                     {
-                        game.world.radialOutStarts[i] = collisionPoint;
+                        game.world.skyViewlineStarts[i] = collisionPoint;
                     }
                 }
 
                 // For rays on sky check left screen
-                if (CheckCollisionLines(bottomLeft, topLeft, game.world.radialOutStarts[i], game.world.radialOutEnds[i], &collisionPoint))
+                if (CheckCollisionLines(bottomLeft, topLeft, game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], &collisionPoint))
                 {
-                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.radialOutStarts[i]))
+                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.skyViewlineStarts[i]))
                     {
-                        game.world.radialOutStarts[i] = collisionPoint;
+                        game.world.skyViewlineStarts[i] = collisionPoint;
                     }
                 }
 
                 // For rays on sky check right screen
-                if (CheckCollisionLines(bottomRight, topRight, game.world.radialOutStarts[i], game.world.radialOutEnds[i], &collisionPoint))
+                if (CheckCollisionLines(bottomRight, topRight, game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], &collisionPoint))
                 {
-                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.radialOutStarts[i]))
+                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.skyViewlineStarts[i]))
                     {
-                        game.world.radialOutStarts[i] = collisionPoint;
+                        game.world.skyViewlineStarts[i] = collisionPoint;
                     }
                 }
 
                 i++;
                 if (i == bottomRightAngle)
                     break;
-                i = (i >= game.world.radialLinesCount) ? i - game.world.radialLinesCount : i;
+                i = (i >= game.world.viewlineCount) ? i - game.world.viewlineCount : i;
             }
 
             if (!game.world.allVisited)
             {
                 bool allVisited = true;
-                for (int i = 0; i < game.world.radialLinesCount; i++)
+                for (int i = 0; i < game.world.viewlineCount; i++)
                 {
                     allVisited = allVisited && game.world.visted[i];
                 }
