@@ -345,7 +345,14 @@ void InitConfig(Game *game, int width, int height, float dpi)
         game->display.height = height;
         game->display.dpi = dpi;
 
-        game->display.pixelsPerUnit = height / game->display.cHeightUnits;
+        float ppy = height / game->display.cHeightUnits;
+        float ppx = width / game->display.cWidthUnits;
+        if (ppx < ppy) {
+            game->display.pixelsPerUnit = ppx;
+        }
+        else {
+            game->display.pixelsPerUnit = ppy;
+        }
         game->display.cwidth = game->display.pixelsPerUnit * game->display.cWidthUnits;
         game->display.cheight = game->display.pixelsPerUnit * game->display.cHeightUnits;
     }
@@ -425,7 +432,7 @@ void InitGame(Game *game, int width, int height, float dpi)
         float overviewZoom = height / (game->config.world.floorRadius * 3.2f);
 
         game->display.camera = (Camera2D){
-            .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
+            .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y}, // TODO fix offset for vertical resolution
             .target = {0, -game->config.world.floorRadius},
             .zoom = game->display.zoomWhileMoving};
 
@@ -627,15 +634,6 @@ void UpdateDrawFrame(void)
                 BLACK);
         }
 
-        static float offset = 25.0f;
-        if (IsKeyDown(KEY_UP))
-        {
-            offset += 0.1f;
-        }
-        if (IsKeyDown(KEY_DOWN))
-        {
-            offset -= 0.1f;
-        }
 
         float deltaAngleInDegree = game.world.floorTextureAngle;
         float deltaAngleInRad = deltaAngleInDegree * DEG2RAD;
