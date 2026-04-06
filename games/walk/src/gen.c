@@ -135,7 +135,7 @@ Image GenTilableRocks(int width, int height, int outerRadius, int innerRadius, i
             float distSquareFromCenter = (y - cy) * (y - cy) + (x - cx) * (x - cx);
             if (distSquareFromCenter > outerSquared)
             {
-                pixels[y * width + x] = RED;
+                pixels[y * width + x] = BLANK;
                 continue;
             }
 
