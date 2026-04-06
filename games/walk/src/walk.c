@@ -292,18 +292,21 @@ void GenerateWorld(Game *game)
     // Generate rocks
     Image rocksImage;
     
-    float angleInDegreeCoveredByTex = 15.0f;
+    float angleInDegreeCoveredByTex = 10.0f;
 
     float outRad = game->world.floor.radius;
     float inRad = game->world.floor.radiusSeenAtRest ;
-    int texWidth = outRad * tanf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f) * 2;
-    int texHeight = (outRad - inRad) + outRad * (1 - cosf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f));
+    int texWidth = outRad * tanf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f) * 2 + 1;
+    int texHeight = (outRad - inRad) + outRad * (1 - cosf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f)) + 1;
     int offset = 0;
     offset = (outRad - inRad) * tanf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f);
 
-    rocksImage = GenTilableRocks(texWidth, texHeight, game->world.floor.radius, game->world.floor.radiusSeenAtRest, game->display.pixelsPerUnit);
-    game->world.floorTexture = LoadTextureFromImage(rocksImage);
-    SetTextureWrap(game->world.floorTexture, TEXTURE_WRAP_CLAMP);
+    rocksImage = GenTilableRocks(texWidth, texHeight, game->world.floor.radius, game->world.floor.radiusSeenAtRest, game->display.pixelsPerUnit * 2.75f);
+    
+    Texture2D floorTexture = LoadTextureFromImage(rocksImage);
+    SetTextureWrap(floorTexture, TEXTURE_WRAP_CLAMP);
+    SetTextureFilter(floorTexture, TEXTURE_FILTER_POINT);
+    game->world.floorTexture = floorTexture;
     game->world.floorTextureOffset = offset;
     game->world.floorTextureAngle = angleInDegreeCoveredByTex;
 
@@ -316,6 +319,7 @@ void FreeGame(Game *game)
     World world = game->world;
     free(world.trees);
     free(world.clouds);
+    UnloadTexture(game->world.floorTexture);
 }
 
 #pragma endregion
@@ -661,7 +665,7 @@ void UpdateDrawFrame(void)
 
         // DrawTextureEx(game.world.floorTexture, (Vector2){0, 0}, 0, 1.0f, WHITE);1
         //   Draw Floor
-        //DrawRing((Vector2){0, 0}, floorRadius - 10, floorRadius, 0, 360, 360, BROWN);
+        DrawRing((Vector2){0, 0}, floorRadius - game.display.pixelsPerUnit / 10, floorRadius, 0, 360, 360, BROWN);
 
         // DrawCircleSector((Vector2){0, 0}, game.world.floor.radiusSeenAtRest, 0, 360, 360, WHITE);
 
