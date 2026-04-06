@@ -20,6 +20,7 @@ float randomFloat(float min, float max)
 
 Image GenImageRocks(int width, int innerRadius, int tileSize, int seedOffset, float border)
 {
+
     int height = width;
     Color *pixels = (Color *)RL_MALLOC(width * height * sizeof(Color));
 

@@ -101,6 +101,12 @@ typedef struct Display
 {
     int width;
     int height;
+    int cwidth;
+    int cheight;
+    int cWidthUnits;
+    int cHeightUnits;
+    int pixelsPerUnit;
+    float dpi;
     Camera2D camera;
     Camera2D worldCamera;
     float zoomAtRest;
@@ -138,14 +144,9 @@ typedef struct CameraConfig
     float angleShowAtRest;
     float angleShowWhileMoving;
 
-    float dampenedAngle;
-    float angleOffPlayerAtRest;
-    float angleOffPlayerWhileMoving;
-
     EaseType restToMoveEase;
     EaseType moveToRestEase;
 
-    float angleMovePerSecond;
     float restToMoveZoomDuration;
     float moveToRestZoomDuration;
 
@@ -155,6 +156,7 @@ typedef struct CameraConfig
 
 typedef struct GameplayConfig
 {
+    float timeForFullRotation;
     float speedInDegreesPerSecond;
 } GameplayConfig;
 
@@ -200,7 +202,7 @@ typedef struct Game
 Game game;
 
 #pragma region func definitions
-void InitGame(Game *game, int width, int height);
+void InitGame(Game *game, int width, int height, float dpi);
 void FreeGame(Game *game);
 void UpdateDrawFrame(void);
 #pragma endregion
@@ -209,19 +211,22 @@ int main(void)
 {
 
     int width, height;
+    float dpi;
 #ifdef PLATFORM_WEB
     width = emscripten_run_script_int("window.innerWidth");
     height = emscripten_run_script_int("window.innerHeight");
+    dpi = emscripten_run_script_int("window.devicePixelRatio * 100") / 100.0f;
 #else
-    width = 16 * 90;
-    height = 9 * 90;
+    width = 1000 * 1.4f;
+    height = 450 * 1.4f;
+    dpi = 2.4;
 #endif
 
     srand(time(NULL));
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(width, height, "Walk");
-    InitGame(&game, width, height);
+    InitGame(&game, width, height, dpi);
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
@@ -284,10 +289,10 @@ void GenerateWorld(Game *game)
     // Generate rocks
     Image rocksImage;
     rocksImage = GenImageRocks(
-        game->world.floor.radius * 2 * 4,
-        game->world.floor.radiusSeenAtRest * 4,
+        game->world.floor.radius * 2,
+        game->world.floor.radiusSeenAtRest,
         game->config.world.rockHatchTileSize, game->config.world.rockHatchSeedOffset, game->config.world.rockHatchBorder);
-    //rocksImage = GenImageRocksRadial( game->world.floor.radius * 2, 0, 300, 0.9f);
+    // rocksImage = GenImageRocksRadial( game->world.floor.radius * 2, 0, 300, 0.9f);
     game->world.floorTexture = LoadTextureFromImage(rocksImage);
     UnloadImage(rocksImage);
 }
@@ -301,66 +306,73 @@ void FreeGame(Game *game)
 
 #pragma endregion
 
-void InitConfig(Game *game, int width, int height)
+void InitConfig(Game *game, int width, int height, float dpi)
 {
+    // Camera
+    {
+        game->config.camera.angleShowAtRest = 60;
+        game->config.camera.angleShowWhileMoving = 14.365f; //to get moving zoom to 0.25f TODO: shift starting config to zoom level
+        game->config.camera.restToMoveEase = EASE_SINE_OUT;
+        game->config.camera.moveToRestEase = EASE_SINE_IN;
+        game->config.camera.restToMoveZoomDuration = 3.0f;
+        game->config.camera.moveToRestZoomDuration = 5.0f;
+        game->config.camera.offset = (Vector2){0.5f, 0.7f};
+    }
+
+    // display
+    {
+        game->display.cHeightUnits = 9;
+        game->display.cWidthUnits = 16;
+        game->display.width = width;
+        game->display.height = height;
+        game->display.dpi = dpi;
+
+        game->display.pixelsPerUnit = height / game->display.cHeightUnits;
+        game->display.cwidth = game->display.pixelsPerUnit * game->display.cWidthUnits;
+        game->display.cheight = game->display.pixelsPerUnit * game->display.cHeightUnits;
+    }
+
     // World
     {
-
-        game->config.world.floorRadius = 800;
-        game->config.world.rockHatchTileSize = 256;
-        game->config.world.rockHatchSeedOffset = 20;
-        game->config.world.rockHatchBorder = 0.8f;
+        game->config.world.floorRadius = game->display.cwidth / (2 * sinf(game->config.camera.angleShowWhileMoving * DEG2RAD * 0.5f));
+        TraceLog(LOG_INFO, "Floor radius %f", game->config.world.floorRadius);
+        game->config.world.rockHatchTileSize = game->display.pixelsPerUnit * 4;
+        game->config.world.rockHatchSeedOffset = game->display.pixelsPerUnit / 3;
+        game->config.world.rockHatchBorder = 50.0f / game->display.pixelsPerUnit;
 
         game->config.world.treeCount = 20;
         game->config.world.treeWidth[0] = 10;
         game->config.world.treeWidth[1] = 30;
-        game->config.world.treeHeight[0] = 50;
-        game->config.world.treeHeight[1] = 150;
+        game->config.world.treeHeight[0] = 4 * game->display.pixelsPerUnit;
+        game->config.world.treeHeight[1] = 20 * game->display.pixelsPerUnit;
         game->config.world.cloudCount = 50;
-        game->config.world.cloudWidth[0] = 50;
-        game->config.world.cloudWidth[1] = 150;
-        game->config.world.cloudHeight[0] = 20;
-        game->config.world.cloudHeight[1] = 60;
-        game->config.world.cloudFloatingHeight[0] = 85;
-        game->config.world.cloudFloatingHeight[1] = 250;
+        game->config.world.cloudWidth[0] = game->display.pixelsPerUnit * 3;
+        game->config.world.cloudWidth[1] = game->display.pixelsPerUnit * 8;
+        game->config.world.cloudHeight[0] = game->display.pixelsPerUnit / 2;
+        game->config.world.cloudHeight[1] = 2 * game->display.pixelsPerUnit;
+        game->config.world.cloudFloatingHeight[0] = 6 * game->display.pixelsPerUnit;
+        game->config.world.cloudFloatingHeight[1] = 25 * game->display.pixelsPerUnit;
     }
 
-    // Camera
-    {
-        game->config.camera.angleShowAtRest = 60;
-        game->config.camera.angleShowWhileMoving = 20;
-        game->config.camera.dampenedAngle = 3;
-        game->config.camera.angleOffPlayerAtRest = 0;
-        game->config.camera.angleOffPlayerWhileMoving = 0;
-        game->config.camera.restToMoveEase = EASE_SINE_OUT;
-        game->config.camera.moveToRestEase = EASE_SINE_IN_OUT;
-        game->config.camera.angleMovePerSecond = 0.5f;
-        game->config.camera.restToMoveZoomDuration = 3.0f;
-        game->config.camera.moveToRestZoomDuration = 5.0f;
-        game->config.camera.offset = (Vector2){0.5f, 0.6f};
-    }
+    game->config.player.width = game->display.pixelsPerUnit * 2.0f;
+    game->config.player.height = game->display.pixelsPerUnit * 4.0f;
 
     // Editor
     {
         game->config.editor.showDemoWindow = false;
         game->config.editor.showAngleValues = true;
-        game->config.editor.showRadialLines = false;
+        game->config.editor.showRadialLines = true;
     }
-    game->config.gameplay.speedInDegreesPerSecond = 360.0f / (90);
-
-    game->config.controls.maxDurationForQuickTap = 20.0f / 60.f;
-
-    game->config.player.width = 10;
-    game->config.player.height = 20;
+    game->config.gameplay.timeForFullRotation = 120.0f;
+    game->config.gameplay.speedInDegreesPerSecond = 360.0f / game->config.gameplay.timeForFullRotation;
+    game->config.controls.maxDurationForQuickTap = 20.0f / 60.f; // 20 frames in 60 frames
+    
 }
 
-void InitGame(Game *game, int width, int height)
+void InitGame(Game *game, int width, int height, float dpi)
 {
 
-    InitConfig(game, width, height);
-
-    game->display.width = width;
-    game->display.height = height;
+    InitConfig(game, width, height, dpi);
 
     // Init ViewLines
     {
@@ -375,8 +387,8 @@ void InitGame(Game *game, int width, int height)
             game->world.skyViewlineStarts[i].x = (floorRadius + 15) * sinf(angle);
             game->world.skyViewlineStarts[i].y = -(floorRadius + 15) * cosf(angle);
 
-            game->world.skyViewlineEnds[i].x = (floorRadius + 500) * sinf(angle);
-            game->world.skyViewlineEnds[i].y = -(floorRadius + 500) * cosf(angle);
+            game->world.skyViewlineEnds[i].x = (floorRadius + game->display.pixelsPerUnit * 35) * sinf(angle);
+            game->world.skyViewlineEnds[i].y = -(floorRadius + game->display.pixelsPerUnit * 35) * cosf(angle);
         }
     }
 
@@ -389,11 +401,11 @@ void InitGame(Game *game, int width, int height)
         float chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
         game->world.floor.radius = game->config.world.floorRadius;
 
-        game->display.zoomAtRest = width / chordLengthAtRest;
-        game->display.zoomWhileMoving = width / chordLengthWhileMoving;
+        game->display.zoomAtRest = game->display.cwidth / chordLengthAtRest;
+        game->display.zoomWhileMoving = game->display.cwidth / chordLengthWhileMoving;
         game->display.zoomStart = game->display.zoomWhileMoving;
         game->display.zoomEnd = game->display.zoomWhileMoving;
-        float overviewZoom = width / (game->config.world.floorRadius * 5.0f);
+        float overviewZoom = height / (game->config.world.floorRadius * 3.2f);
 
         game->display.camera = (Camera2D){
             .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
@@ -597,8 +609,8 @@ void UpdateDrawFrame(void)
                 BLACK);
         }
 
-        DrawTextureEx(game.world.floorTexture, (Vector2){-floorRadius, -floorRadius}, 0, 0.25f, WHITE);
-        // Draw Floor
+        DrawTextureEx(game.world.floorTexture, (Vector2){-floorRadius, -floorRadius}, 0, 1.0f, WHITE);
+        //  Draw Floor
         DrawRing((Vector2){0, 0}, floorRadius - 2, floorRadius, 0, 360, 360, BROWN);
 
         // DrawCircleSector((Vector2){0, 0}, game.world.floor.radiusSeenAtRest, 0, 360, 360, WHITE);
@@ -609,20 +621,20 @@ void UpdateDrawFrame(void)
             {
                 float angleRad = i * DEG2RAD;
                 Vector2 pos = (Vector2){
-                    (floorRadius + 15) * sinf(angleRad),
-                    -(floorRadius + 15) * cosf(angleRad)};
+                    (floorRadius + 35) * sinf(angleRad),
+                    -(floorRadius + 35) * cosf(angleRad)};
 
                 DrawTextPro(GetFontDefault(), TextFormat("%i", i),
                             pos, (Vector2){0, 0}, i,
-                            10, 1, DARKGRAY);
+                            30, 1, DARKGRAY);
             }
         }
         if (config.editor.showRadialLines)
         {
             for (int i = 0; i < game.world.viewlineCount; i++)
             {
-                DrawLineV((Vector2){0, 0}, game.world.earthViewlineStarts[i], GRAY);
-                DrawLineV(game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], GRAY);
+                DrawLineV((Vector2){0, 0}, game.world.earthViewlineStarts[i], GREEN);
+                DrawLineV(game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], RED);
             }
         }
 
@@ -743,11 +755,17 @@ void UpdateDrawFrame(void)
         }
 
         EndMode2D();
+        DrawRectangle(0, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
+        DrawRectangle(game.display.width - (game.display.width - game.display.cwidth) / 2, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
+
+        DrawRectangle(0, 0, game.display.width, (game.display.height - game.display.cheight) / 2, BLACK);
+        DrawRectangle(0, game.display.height - (game.display.height - game.display.cheight) / 2, game.display.width, (game.display.height - game.display.cheight) / 2, BLACK);
 #pragma endregion
 
 #ifdef PLATFORM_DESKTOP
         rlImGuiEnd(); // ends the ImGui content mode. Make all ImGui calls before this
 #endif
+
         EndDrawing();
     }
 }
