@@ -56,6 +56,7 @@ typedef struct Floor
     float radius;
     float radiusSeenWhileMoving;
     float radiusSeenAtRest;
+    float gapSeenAtRest;
 } Floor;
 
 typedef struct World
@@ -288,12 +289,14 @@ void GenerateWorld(Game *game)
     GenerateClouds(game);
     // Generate rocks
     Image rocksImage;
-    rocksImage = GenImageRocks(
-        game->world.floor.radius * 2,
-        game->world.floor.radiusSeenAtRest,
-        game->config.world.rockHatchTileSize, game->config.world.rockHatchSeedOffset, game->config.world.rockHatchBorder);
+    // rocksImage = GenImageRocks(
+    //     game->world.floor.radius * 2,
+    //     game->world.floor.radiusSeenAtRest,
+    //     game->config.world.rockHatchTileSize, game->config.world.rockHatchSeedOffset, game->config.world.rockHatchBorder);
     // rocksImage = GenImageRocksRadial( game->world.floor.radius * 2, 0, 300, 0.9f);
+    rocksImage = GenTilableRocks(game->world.floor.gapSeenAtRest, game->world.floor.radius, game->world.floor.radiusSeenAtRest, game->display.pixelsPerUnit);
     game->world.floorTexture = LoadTextureFromImage(rocksImage);
+    
     UnloadImage(rocksImage);
 }
 
@@ -311,7 +314,7 @@ void InitConfig(Game *game, int width, int height, float dpi)
     // Camera
     {
         game->config.camera.angleShowAtRest = 60;
-        game->config.camera.angleShowWhileMoving = 14.365f; //to get moving zoom to 0.25f TODO: shift starting config to zoom level
+        game->config.camera.angleShowWhileMoving = 14.365f; // to get moving zoom to 0.25f TODO: shift starting config to zoom level
         game->config.camera.restToMoveEase = EASE_SINE_OUT;
         game->config.camera.moveToRestEase = EASE_SINE_IN;
         game->config.camera.restToMoveZoomDuration = 3.0f;
@@ -366,7 +369,6 @@ void InitConfig(Game *game, int width, int height, float dpi)
     game->config.gameplay.timeForFullRotation = 120.0f;
     game->config.gameplay.speedInDegreesPerSecond = 360.0f / game->config.gameplay.timeForFullRotation;
     game->config.controls.maxDurationForQuickTap = 20.0f / 60.f; // 20 frames in 60 frames
-    
 }
 
 void InitGame(Game *game, int width, int height, float dpi)
@@ -424,8 +426,9 @@ void InitGame(Game *game, int width, int height, float dpi)
         game->display.camera.zoom = game->display.zoomWhileMoving;
         Vector2 worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
         game->world.floor.radiusSeenWhileMoving = -worldBottomMiddleWhileMoving.y;
+        game->world.floor.gapSeenAtRest = game->world.floor.radius - game->world.floor.radiusSeenAtRest;
 
-        TraceLog(LOG_INFO, "Radius seen %f, %f", game->world.floor.radius, game->world.floor.radiusSeenAtRest);
+        TraceLog(LOG_INFO, "Radius seen %f, %f, %f", game->world.floor.radius, game->world.floor.radiusSeenAtRest, game->world.floor.radius - game->world.floor.radiusSeenAtRest);
     }
 
     GenerateWorld(game);
@@ -472,7 +475,7 @@ void UpdateDrawFrame(void)
                     game.display.zoomEaseType = game.config.camera.moveToRestEase;
                     game.display.elapsedZoomTime = 0;
                     game.display.zoomStart = game.display.camera.zoom;
-                    game.display.zoomEnd = game.display.zoomAtRest;
+                    game.display.zoomEnd = game.display.zoomAtRest * 0.7f;
                     game.display.zoomTime = game.config.camera.moveToRestZoomDuration;
                 }
             }
@@ -594,7 +597,8 @@ void UpdateDrawFrame(void)
             BeginMode2D(game.display.camera);
         }
 
-        float floorRadius = config.world.floorRadius;
+        float floorRadius = game.world.floor.radius;
+        float gapSeenAtRest = game.world.floor.gapSeenAtRest;
         float playerAngleInRad = game.player.atAngle * DEG2RAD;
 
         // Draw Player
@@ -609,8 +613,32 @@ void UpdateDrawFrame(void)
                 BLACK);
         }
 
-        DrawTextureEx(game.world.floorTexture, (Vector2){-floorRadius, -floorRadius}, 0, 1.0f, WHITE);
-        //  Draw Floor
+        static float offset = 25.0f;
+        if (IsKeyDown(KEY_UP)) {
+            offset+=0.1f;
+        }
+        if (IsKeyDown(KEY_DOWN)) {
+            offset-=0.1f;
+        }
+
+        float deltaAngleInRad = game.world.floor.gapSeenAtRest / (game.world.floor.radius);
+        float deltaOffset = (game.world.floor.radius * deltaAngleInRad  - game.world.floor.radiusSeenWhileMoving * deltaAngleInRad)/2 + offset;
+        for (int i = 0; i * deltaAngleInRad < 2 * PI; i++)
+        {
+            float drawX = (floorRadius)*sinf(deltaAngleInRad * i) - gapSeenAtRest * cosf(deltaAngleInRad * i) / 2;
+            float drawY = -floorRadius * cosf(deltaAngleInRad * i) - gapSeenAtRest * sinf(deltaAngleInRad * i) / 2;
+            
+            float scale = 1.0f;
+            Vector2 position = {drawX,drawY};
+            Rectangle source = { 0.0f, 0.0f, (float)game.world.floorTexture.width, (float)game.world.floorTexture.height };
+            Rectangle dest = { position.x, position.y, (float)game.world.floorTexture.width*scale, (float)game.world.floorTexture.height*scale };
+            Vector2 origin = { 0.0f, 0.0f };
+            
+            DrawTextureInRing(game.world.floorTexture, source, dest, origin, i * deltaAngleInRad * RAD2DEG, WHITE, deltaOffset);
+        }
+
+        // DrawTextureEx(game.world.floorTexture, (Vector2){0, 0}, 0, 1.0f, WHITE);1
+        //   Draw Floor
         DrawRing((Vector2){0, 0}, floorRadius - 2, floorRadius, 0, 360, 360, BROWN);
 
         // DrawCircleSector((Vector2){0, 0}, game.world.floor.radiusSeenAtRest, 0, 360, 360, WHITE);

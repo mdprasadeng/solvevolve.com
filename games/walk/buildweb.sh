@@ -16,7 +16,7 @@ OPTFLAGS="-DPLATFORM_WEB -DDGRAPHICS_API_OPENGL_ES2 -s USE_GLFW=3 -o walk.html -
 # 2. Build Process
 echo "Compiling $SRC..."
 
-$CC  $CFLAGS $SRC -o $OUT $INC $WLIB_PATH $WLIBGS $OPTFLAGS -s EXPORTED_RUNTIME_METHODS=['requestFullscreen']   -s TOTAL_MEMORY=671088640   
+$CC  $CFLAGS $SRC -o $OUT $INC $WLIB_PATH $WLIBGS $OPTFLAGS -s EXPORTED_RUNTIME_METHODS=['requestFullscreen']   -s TOTAL_MEMORY=4294967296   
 
 # 3. Check if build succeeded
 if [ $? -eq 0 ]; then

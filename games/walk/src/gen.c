@@ -1,4 +1,6 @@
 #include "raylib.h"
+#include "rlgl.h"               // OpenGL abstraction layer to multiple versions
+
 #include "raymath.h"
 #include "reasings.h"
 #include <stdio.h>
@@ -17,6 +19,205 @@ float randomFloat(float min, float max)
 #define RANDOM_FLOAT
 
 #endif
+
+void DrawTextureInRing(Texture2D texture, Rectangle source, Rectangle dest, Vector2 origin, float rotation, Color tint, float destOffset)
+{
+    // Check if texture is valid
+    if (texture.id > 0)
+    {
+        float width = (float)texture.width;
+        float height = (float)texture.height;
+
+        bool flipX = false;
+
+        if (source.width < 0) { flipX = true; source.width *= -1; }
+        if (source.height < 0) source.y -= source.height;
+
+        if (dest.width < 0) dest.width *= -1;
+        if (dest.height < 0) dest.height *= -1;
+
+        Vector2 topLeft = { 0 };
+        Vector2 topRight = { 0 };
+        Vector2 bottomLeft = { 0 };
+        Vector2 bottomRight = { 0 };
+
+        // Only calculate rotation if needed
+        if (rotation == 0.0f)
+        {
+            float x = dest.x - origin.x;
+            float y = dest.y - origin.y;
+            topLeft = (Vector2){ x, y };
+            topRight = (Vector2){ x + dest.width, y };
+            bottomLeft = (Vector2){ x + destOffset, y + dest.height };
+            bottomRight = (Vector2){ x + dest.width - destOffset, y + dest.height };
+        }
+        else
+        {
+            float sinRotation = sinf(rotation*DEG2RAD);
+            float cosRotation = cosf(rotation*DEG2RAD);
+            float x = dest.x;
+            float y = dest.y;
+            float dx = -origin.x;
+            float dy = -origin.y;
+
+            topLeft.x = x + dx*cosRotation - dy*sinRotation;
+            topLeft.y = y + dx*sinRotation + dy*cosRotation;
+
+            topRight.x = x + (dx + dest.width)*cosRotation - dy*sinRotation;
+            topRight.y = y + (dx + dest.width)*sinRotation + dy*cosRotation;
+
+            bottomLeft.x = x + dx*cosRotation - (dy + dest.height)*sinRotation + destOffset*cosRotation;
+            bottomLeft.y = y + dx*sinRotation + (dy + dest.height)*cosRotation + destOffset*sinRotation;
+
+            bottomRight.x = x + (dx + dest.width)*cosRotation - (dy + dest.height)*sinRotation -destOffset*cosRotation;
+            bottomRight.y = y + (dx + dest.width)*sinRotation + (dy + dest.height)*cosRotation -destOffset*sinRotation;
+        }
+
+        rlSetTexture(texture.id);
+        rlBegin(RL_QUADS);
+
+            rlColor4ub(tint.r, tint.g, tint.b, tint.a);
+            rlNormal3f(0.0f, 0.0f, 1.0f);                          // Normal vector pointing towards viewer
+
+            // Top-left corner for texture and quad
+            if (flipX) rlTexCoord2f((source.x + source.width)/width, source.y/height);
+            else rlTexCoord2f(source.x/width, source.y/height);
+            rlVertex2f(topLeft.x, topLeft.y);
+
+            // Bottom-left corner for texture and quad
+            if (flipX) rlTexCoord2f((source.x + source.width)/width, (source.y + source.height)/height);
+            else rlTexCoord2f(source.x/width, (source.y + source.height)/height);
+            rlVertex2f(bottomLeft.x, bottomLeft.y);
+
+            // Bottom-right corner for texture and quad
+            if (flipX) rlTexCoord2f(source.x/width, (source.y + source.height)/height);
+            else rlTexCoord2f((source.x + source.width)/width, (source.y + source.height)/height);
+            rlVertex2f(bottomRight.x, bottomRight.y);
+
+            // Top-right corner for texture and quad
+            if (flipX) rlTexCoord2f(source.x/width, source.y/height);
+            else rlTexCoord2f((source.x + source.width)/width, source.y/height);
+            rlVertex2f(topRight.x, topRight.y);
+
+        rlEnd();
+        rlSetTexture(0);
+
+        
+    }
+}
+
+Image GenTilableRocks(int size, int outerRadius, int innerRadius, int tileSize)
+{
+    int seedsPerRow = size / tileSize;
+    int seedsPerCol = size / tileSize;
+    int seedCount = seedsPerRow * seedsPerCol;
+    float seedOffset = tileSize / 15.0f;
+    Vector2 *seeds = (Vector2 *)RL_MALLOC(seedCount * sizeof(Vector2));
+    for (int i = 0; i < seedCount; i++)
+    {
+        int y = (i / seedsPerRow) * tileSize + GetRandomValue(seedOffset, tileSize - seedOffset);
+        int x = (i % seedsPerRow) * tileSize + GetRandomValue(seedOffset, tileSize - seedOffset);
+        seeds[i] = (Vector2){(float)x, (float)y};
+    }
+
+    Color *pixels = (Color *)RL_MALLOC(size * size * sizeof(Color));
+    float outerSquared = outerRadius * outerRadius;
+    float innserSquared = innerRadius * innerRadius;
+    int cx = size / 2;
+    int cy = outerRadius;
+    for (int y = 0; y < size; y++)
+    {
+        int tileY = y / tileSize;
+        for (int x = 0; x < size; x++)
+        {
+            float distSquareFromCenter = (y - cy) * (y - cy) + (x - cx) * (x - cx);
+            if (distSquareFromCenter > outerSquared || distSquareFromCenter < innserSquared)
+            {
+                pixels[y * size + x] = BLANK;
+                continue;
+            }
+
+            // Inside your x/y loop, before calculating distances:
+            float noiseScale = 0.03f;    // Frequency of the "wiggles"
+            float noiseIntensity = 3.0f; // Magnitude of the "wiggles" (in pixels)
+
+            // Calculate offsets using Perlin noise
+            float offsetX = stb_perlin_noise3((float)x * noiseScale, (float)y * noiseScale, 0, 0, 0, 0) * noiseIntensity;
+            float offsetY = stb_perlin_noise3((float)y * noiseScale, (float)x * noiseScale, 1.0f, 0, 0, 0) * noiseIntensity;
+
+            // Use these "warped" coordinates for the distance check
+            float warpedX = (float)x + offsetX;
+            float warpedY = (float)y + offsetY;
+
+            int tileX = x / tileSize;
+
+            float minDistance = 65536.0f; //(float)strtod("Inf", NULL);
+            float secondMinDistance = 65536.0f;
+
+            // Check all adjacent tiles
+            for (int i = -1; i < 2; i++)
+            {
+                for (int j = -1; j < 2; j++)
+                {
+                    if ((tileY + j < 0) || (tileY + j >= seedsPerCol))
+                        continue;
+
+                    int wrappedTileX = tileX;
+                    if (tileX + i < 0) {
+                        wrappedTileX += seedsPerRow;
+                    }
+                    else if (tileX + i >= seedsPerRow) {
+                        wrappedTileX -= seedsPerRow;
+                    }
+                        
+
+
+                    Vector2 neighborSeed = seeds[(tileY + j) * seedsPerRow + wrappedTileX + i];
+                    if (tileX + i < 0) {
+                        neighborSeed.x -= size; 
+                    }
+                    else if (tileX + i >= seedsPerRow) {
+                        neighborSeed.x += size;
+                    }
+                        
+
+
+                    float dist = (float)hypot(warpedX - (int)neighborSeed.x, warpedY - (int)neighborSeed.y);
+                    float lastMinDistance = minDistance;
+                    minDistance = (float)fmin(minDistance, dist);
+                    if (minDistance != lastMinDistance)
+                    {
+                        secondMinDistance = lastMinDistance;
+                    }
+                    else
+                    {
+                        secondMinDistance = (float)fmin(secondMinDistance, dist);
+                    }
+                }
+            }
+
+            float border = 1.0f;
+            if (secondMinDistance - minDistance < border * 0.1f * minDistance)
+            {
+                pixels[y * size + x] = WHITE;
+            }
+            else
+            {
+                pixels[y * size + x] = BROWN;
+            }
+
+        }
+    }
+
+    Image image = {
+        .data = pixels,
+        .width = size,
+        .height = size,
+        .mipmaps = 1,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
+
+    return image;
+}
 
 Image GenImageRocks(int width, int innerRadius, int tileSize, int seedOffset, float border)
 {
@@ -308,17 +509,19 @@ Image GenImageRocksRadial(int fullRadius, int fromRadius, int seedCount, float p
             int y = fullRadius - seedAtRadius * cosf(seedAtAngle * DEG2RAD);
             seeds[i] = (Vector2){(float)x, (float)y};
             bool anotherPointNearby = false;
-            for (int j=0; j < i; j++) {
-                if (Vector2Distance(seeds[j], seeds[i]) < 5) {
+            for (int j = 0; j < i; j++)
+            {
+                if (Vector2Distance(seeds[j], seeds[i]) < 5)
+                {
                     anotherPointNearby = true;
                     break;
                 }
             }
-            if (anotherPointNearby) {
+            if (anotherPointNearby)
+            {
                 continue;
             }
             break;
-            
         }
     }
 
@@ -433,7 +636,7 @@ int main2(void)
                 reGenerate = false;
             }
             TraceLog(LOG_INFO, "Generating with powFactor %f at: %f", powFactor, GetTime());
-            cellular = GenImageRocksRadial(450, 0, 600, powFactor);
+            cellular = GenTilableRocks(450, 600, 300, 100);
             texture = LoadTextureFromImage(cellular);
             TraceLog(LOG_INFO, "Generation done powFactor %f at: %f", powFactor, GetTime());
         }
@@ -449,7 +652,13 @@ int main2(void)
 
         ClearBackground(RAYWHITE);
 
-        DrawTextureEx(texture, (Vector2) {0, 0}, 0, 1.f, WHITE);
+        float scale = 1.0f;
+        Vector2 position = {0,0};
+        Rectangle source = { 0.0f, 0.0f, (float)texture.width, (float)texture.height };
+        Rectangle dest = { position.x, position.y, (float)texture.width*scale, (float)texture.height*scale };
+        Vector2 origin = { 0.0f, 0.0f };
+
+        DrawTextureInRing(texture, source, dest, origin, 0, WHITE, 100);
 
         EndDrawing();
         //----------------------------------------------------------------------------------
