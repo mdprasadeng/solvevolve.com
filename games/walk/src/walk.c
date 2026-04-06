@@ -74,6 +74,8 @@ typedef struct World
     bool visted[360];
     bool allVisited;
     Texture2D floorTexture;
+    int floorTextureOffset;
+    float floorTextureAngle;
 } World;
 
 typedef struct Controls
@@ -289,15 +291,23 @@ void GenerateWorld(Game *game)
     GenerateClouds(game);
     // Generate rocks
     Image rocksImage;
-    // rocksImage = GenImageRocks(
-    //     game->world.floor.radius * 2,
-    //     game->world.floor.radiusSeenAtRest,
-    //     game->config.world.rockHatchTileSize, game->config.world.rockHatchSeedOffset, game->config.world.rockHatchBorder);
-    // rocksImage = GenImageRocksRadial( game->world.floor.radius * 2, 0, 300, 0.9f);
-    rocksImage = GenTilableRocks(game->world.floor.gapSeenAtRest, game->world.floor.radius, game->world.floor.radiusSeenAtRest, game->display.pixelsPerUnit);
-    game->world.floorTexture = LoadTextureFromImage(rocksImage);
     
+    float angleInDegreeCoveredByTex = 30.0f;
+
+    float outRad = game->world.floor.radius;
+    float inRad = game->world.floor.radiusSeenAtRest / 4;
+    int texWidth = outRad * tanf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f) * 2;
+    int texHeight = (outRad - inRad);
+    int offset = 0;
+    offset = (outRad - inRad) * tanf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f);
+
+    rocksImage = GenTilableRocks(texWidth, texHeight, game->world.floor.radius, game->world.floor.radiusSeenAtRest, game->display.pixelsPerUnit);
+    game->world.floorTexture = LoadTextureFromImage(rocksImage);
+    game->world.floorTextureOffset = offset;
+    game->world.floorTextureAngle = angleInDegreeCoveredByTex;
+
     UnloadImage(rocksImage);
+    TraceLog(LOG_INFO, "Out rad %f, In rad %f, tex width %d, tex height %d offset %d", outRad, inRad, texWidth, texHeight, offset);
 }
 
 void FreeGame(Game *game)
@@ -364,7 +374,7 @@ void InitConfig(Game *game, int width, int height, float dpi)
     {
         game->config.editor.showDemoWindow = false;
         game->config.editor.showAngleValues = true;
-        game->config.editor.showRadialLines = true;
+        game->config.editor.showRadialLines = false;
     }
     game->config.gameplay.timeForFullRotation = 120.0f;
     game->config.gameplay.speedInDegreesPerSecond = 360.0f / game->config.gameplay.timeForFullRotation;
@@ -475,7 +485,7 @@ void UpdateDrawFrame(void)
                     game.display.zoomEaseType = game.config.camera.moveToRestEase;
                     game.display.elapsedZoomTime = 0;
                     game.display.zoomStart = game.display.camera.zoom;
-                    game.display.zoomEnd = game.display.zoomAtRest * 0.7f;
+                    game.display.zoomEnd = game.display.zoomAtRest;
                     game.display.zoomTime = game.config.camera.moveToRestZoomDuration;
                 }
             }
@@ -598,7 +608,6 @@ void UpdateDrawFrame(void)
         }
 
         float floorRadius = game.world.floor.radius;
-        float gapSeenAtRest = game.world.floor.gapSeenAtRest;
         float playerAngleInRad = game.player.atAngle * DEG2RAD;
 
         // Draw Player
@@ -614,32 +623,45 @@ void UpdateDrawFrame(void)
         }
 
         static float offset = 25.0f;
-        if (IsKeyDown(KEY_UP)) {
-            offset+=0.1f;
+        if (IsKeyDown(KEY_UP))
+        {
+            offset += 0.1f;
         }
-        if (IsKeyDown(KEY_DOWN)) {
-            offset-=0.1f;
+        if (IsKeyDown(KEY_DOWN))
+        {
+            offset -= 0.1f;
         }
 
-        float deltaAngleInRad = game.world.floor.gapSeenAtRest / (game.world.floor.radius);
-        float deltaOffset = (game.world.floor.radius * deltaAngleInRad  - game.world.floor.radiusSeenWhileMoving * deltaAngleInRad)/2 + offset;
-        for (int i = 0; i * deltaAngleInRad < 2 * PI; i++)
+        float deltaAngleInDegree = game.world.floorTextureAngle;
+        float deltaAngleInRad = deltaAngleInDegree * DEG2RAD;
+        
+        for (int i = 0; i * deltaAngleInRad < 2 * PI; i+=1)
         {
-            float drawX = (floorRadius)*sinf(deltaAngleInRad * i) - gapSeenAtRest * cosf(deltaAngleInRad * i) / 2;
-            float drawY = -floorRadius * cosf(deltaAngleInRad * i) - gapSeenAtRest * sinf(deltaAngleInRad * i) / 2;
             
+            float topMiddleX = floorRadius * sinf(i*deltaAngleInRad);
+            float topMiddleY = -floorRadius * cosf(i*deltaAngleInRad);
+
+            float drawX = topMiddleX - game.world.floorTexture.width * cosf(i*deltaAngleInRad) / 2;
+            float drawY = topMiddleY - game.world.floorTexture.width * sinf(i*deltaAngleInRad) / 2;
+
             float scale = 1.0f;
-            Vector2 position = {drawX,drawY};
-            Rectangle source = { 0.0f, 0.0f, (float)game.world.floorTexture.width, (float)game.world.floorTexture.height };
-            Rectangle dest = { position.x, position.y, (float)game.world.floorTexture.width*scale, (float)game.world.floorTexture.height*scale };
-            Vector2 origin = { 0.0f, 0.0f };
+
+            Vector2 position = {drawX, drawY};
+            Rectangle source = {0.0f, 0.0f, (float)game.world.floorTexture.width, (float)game.world.floorTexture.height};
+            Rectangle dest = {position.x, position.y, (float)game.world.floorTexture.width * scale, (float)game.world.floorTexture.height * scale};
+            Vector2 origin = {0, 0};
+
+            DrawTextureInRing(game.world.floorTexture, source, dest, origin, i*deltaAngleInRad*RAD2DEG, WHITE, game.world.floorTextureOffset);
             
-            DrawTextureInRing(game.world.floorTexture, source, dest, origin, i * deltaAngleInRad * RAD2DEG, WHITE, deltaOffset);
+            
+            DrawCircle(topMiddleX, topMiddleY, 50, PINK);
+            DrawCircle(drawX, drawY, 50, GREEN);
+
         }
 
         // DrawTextureEx(game.world.floorTexture, (Vector2){0, 0}, 0, 1.0f, WHITE);1
         //   Draw Floor
-        DrawRing((Vector2){0, 0}, floorRadius - 2, floorRadius, 0, 360, 360, BROWN);
+        DrawRing((Vector2){0, 0}, floorRadius - 10, floorRadius, 0, 360, 360, BROWN);
 
         // DrawCircleSector((Vector2){0, 0}, game.world.floor.radiusSeenAtRest, 0, 360, 360, WHITE);
 

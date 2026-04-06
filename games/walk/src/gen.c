@@ -20,6 +20,8 @@ float randomFloat(float min, float max)
 
 #endif
 
+
+
 void DrawTextureInRing(Texture2D texture, Rectangle source, Rectangle dest, Vector2 origin, float rotation, Color tint, float destOffset)
 {
     // Check if texture is valid
@@ -106,10 +108,10 @@ void DrawTextureInRing(Texture2D texture, Rectangle source, Rectangle dest, Vect
     }
 }
 
-Image GenTilableRocks(int size, int outerRadius, int innerRadius, int tileSize)
+Image GenTilableRocks(int width, int height, int outerRadius, int innerRadius, int tileSize)
 {
-    int seedsPerRow = size / tileSize;
-    int seedsPerCol = size / tileSize;
+    int seedsPerRow = width / tileSize;
+    int seedsPerCol = height / tileSize;
     int seedCount = seedsPerRow * seedsPerCol;
     float seedOffset = tileSize / 15.0f;
     Vector2 *seeds = (Vector2 *)RL_MALLOC(seedCount * sizeof(Vector2));
@@ -120,20 +122,20 @@ Image GenTilableRocks(int size, int outerRadius, int innerRadius, int tileSize)
         seeds[i] = (Vector2){(float)x, (float)y};
     }
 
-    Color *pixels = (Color *)RL_MALLOC(size * size * sizeof(Color));
+    Color *pixels = (Color *)RL_MALLOC(width * height * sizeof(Color));
     float outerSquared = outerRadius * outerRadius;
-    float innserSquared = innerRadius * innerRadius;
-    int cx = size / 2;
+    // float innerSquared = innerRadius * innerRadius;
+    int cx = width / 2;
     int cy = outerRadius;
-    for (int y = 0; y < size; y++)
+    for (int y = 0; y < height; y++)
     {
         int tileY = y / tileSize;
-        for (int x = 0; x < size; x++)
+        for (int x = 0; x < width; x++)
         {
             float distSquareFromCenter = (y - cy) * (y - cy) + (x - cx) * (x - cx);
-            if (distSquareFromCenter > outerSquared || distSquareFromCenter < innserSquared)
+            if (distSquareFromCenter > outerSquared)
             {
-                pixels[y * size + x] = BLANK;
+                pixels[y * width + x] = RED;
                 continue;
             }
 
@@ -174,10 +176,10 @@ Image GenTilableRocks(int size, int outerRadius, int innerRadius, int tileSize)
 
                     Vector2 neighborSeed = seeds[(tileY + j) * seedsPerRow + wrappedTileX + i];
                     if (tileX + i < 0) {
-                        neighborSeed.x -= size; 
+                        neighborSeed.x -= width; 
                     }
                     else if (tileX + i >= seedsPerRow) {
-                        neighborSeed.x += size;
+                        neighborSeed.x += width;
                     }
                         
 
@@ -199,11 +201,11 @@ Image GenTilableRocks(int size, int outerRadius, int innerRadius, int tileSize)
             float border = 1.0f;
             if (secondMinDistance - minDistance < border * 0.1f * minDistance)
             {
-                pixels[y * size + x] = WHITE;
+                pixels[y * width + x] = WHITE;
             }
             else
             {
-                pixels[y * size + x] = BROWN;
+                pixels[y * width + x] = BROWN;
             }
 
         }
@@ -211,8 +213,8 @@ Image GenTilableRocks(int size, int outerRadius, int innerRadius, int tileSize)
 
     Image image = {
         .data = pixels,
-        .width = size,
-        .height = size,
+        .width = width,
+        .height = height,
         .mipmaps = 1,
         .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
 
@@ -624,6 +626,17 @@ int main2(void)
             reGenerate = true;
         }
 
+        float angleInDegreeCoveredByTex = 20.0f;
+    
+        float outRad = 1640;
+        float inRad = 1300;
+        int texWidth = outRad * sinf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f);
+        int texHeight = (outRad - inRad) * cosf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f);
+        int offset = 0;
+        offset = (texWidth/2 -  (outRad - inRad) * sinf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f));
+        float tileSize = 40;
+
+
         if (IsKeyPressed(KEY_R) || reGenerate)
         {
             if (!reGenerate)
@@ -635,11 +648,12 @@ int main2(void)
             {
                 reGenerate = false;
             }
-            TraceLog(LOG_INFO, "Generating with powFactor %f at: %f", powFactor, GetTime());
-            cellular = GenTilableRocks(450, 600, 300, 100);
+            TraceLog(LOG_INFO, "Tex Size %dx%d, offset %d", texWidth, texHeight, offset);
+            cellular = GenTilableRocks(texWidth, texHeight, outRad, inRad, tileSize);
             texture = LoadTextureFromImage(cellular);
-            TraceLog(LOG_INFO, "Generation done powFactor %f at: %f", powFactor, GetTime());
         }
+
+        
 
         // Update
         //----------------------------------------------------------------------------------
@@ -652,13 +666,22 @@ int main2(void)
 
         ClearBackground(RAYWHITE);
 
+        float cx = 450;
+        float cy = 450;
         float scale = 1.0f;
-        Vector2 position = {0,0};
-        Rectangle source = { 0.0f, 0.0f, (float)texture.width, (float)texture.height };
-        Rectangle dest = { position.x, position.y, (float)texture.width*scale, (float)texture.height*scale };
-        Vector2 origin = { 0.0f, 0.0f };
+        
+        for (int i=0; i  < 360; i+= angleInDegreeCoveredByTex) {
+            float cosFactor = cosf(i * DEG2RAD * 0.5f)/2;
+            float sinFactor = sinf(i * DEG2RAD * 0.5f)/2;
 
-        DrawTextureInRing(texture, source, dest, origin, 0, WHITE, 100);
+            Vector2 position = {cx + outRad * sinFactor - texWidth * cosFactor * 0.5f, cy - outRad * cosFactor - texHeight * sinFactor };
+            Rectangle source = { 0.0f, 0.0f, (float)texture.width, (float)texture.height };
+            Rectangle dest = { position.x, position.y, (float)texture.width*scale, (float)texture.height*scale };
+            Vector2 origin = { 0.0f, 0.0f };
+            DrawTextureInRing(texture, source, dest, origin, i, WHITE, offset);
+
+        }
+        
 
         EndDrawing();
         //----------------------------------------------------------------------------------
