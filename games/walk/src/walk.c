@@ -38,6 +38,8 @@ typedef struct Tree
 {
     float width;
     float height;
+    float canopyHeight;
+    float canopyWidth;
     float atAngle;
     int treeType;
 } Tree;
@@ -111,6 +113,7 @@ typedef struct Display
     int pixelsPerUnit;
     float dpi;
     Camera2D camera;
+    Camera2D radialCamera;
     Camera2D worldCamera;
     float zoomAtRest;
     float zoomWhileMoving;
@@ -133,6 +136,8 @@ typedef struct WorldConfig
     int treeCount;
     float treeWidth[2];
     float treeHeight[2];
+    float treeCanopyWidth[2];
+    float treeCanopyHeight[2];
     int cloudCount;
     float cloudWidth[2];
     float cloudHeight[2];
@@ -193,8 +198,16 @@ typedef struct Config
 
 #pragma endregion
 
+typedef enum GameState
+{
+    GAME_STATE_START = 0,
+    GAME_STATE_PLAYING,
+    GAME_STATE_STOPPED
+} GameState;
+
 typedef struct Game
 {
+    GameState state;
     Config config;
     World world;
     Player player;
@@ -260,11 +273,18 @@ void GenerateTrees(Game *game)
     WorldConfig params = game->config.world;
     world->treesCount = params.treeCount;
     world->trees = (Tree *)malloc(world->treesCount * sizeof(Tree));
+    float averageAngleBetweenTrees = 360.0f / world->treesCount;
     for (int i = 0; i < world->treesCount; i++)
     {
         world->trees[i].width = randomFloat(params.treeWidth[0], params.treeWidth[1]);
         world->trees[i].height = randomFloat(params.treeHeight[0], params.treeHeight[1]);
-        world->trees[i].atAngle = 360 / world->treesCount * i;
+        world->trees[i].canopyWidth = randomFloat(params.treeCanopyWidth[0], params.treeCanopyWidth[1]);
+        world->trees[i].canopyHeight = randomFloat(params.treeCanopyHeight[0], params.treeCanopyHeight[1]);
+        if (world->trees[i].canopyHeight > world->trees[i].canopyWidth)
+        {
+            world->trees[i].canopyHeight = world->trees[i].canopyWidth;
+        }
+        world->trees[i].atAngle = randomFloat(averageAngleBetweenTrees * i, averageAngleBetweenTrees * (i + 1));
         world->trees[i].treeType = rand() % 3; // Assuming 3 types of trees
     }
 }
@@ -275,12 +295,14 @@ void GenerateClouds(Game *game)
     WorldConfig params = game->config.world;
     world->cloudsCount = params.cloudCount;
     world->clouds = (Cloud *)malloc(world->cloudsCount * sizeof(Cloud));
+    float averageAngleBetweenClouds = 360.0f / world->cloudsCount;
+
     for (int i = 0; i < world->cloudsCount; i++)
     {
         world->clouds[i].width = randomFloat(params.cloudWidth[0], params.cloudWidth[1]);
         world->clouds[i].height = randomFloat(params.cloudHeight[0], params.cloudHeight[1]);
         world->clouds[i].floatingHeight = randomFloat(params.cloudFloatingHeight[0], params.cloudFloatingHeight[1]);
-        world->clouds[i].atAngle = 360 / world->cloudsCount * i;
+        world->clouds[i].atAngle = randomFloat(averageAngleBetweenClouds * i, averageAngleBetweenClouds * (i + 1));
         world->clouds[i].cloudType = rand() % 3; // Assuming 3 types of clouds
     }
 }
@@ -289,29 +311,6 @@ void GenerateWorld(Game *game)
 {
     GenerateTrees(game);
     GenerateClouds(game);
-    // Generate rocks
-    Image rocksImage;
-    
-    float angleInDegreeCoveredByTex = 10.0f;
-
-    float outRad = game->world.floor.radius;
-    float inRad = game->world.floor.radiusSeenAtRest ;
-    int texWidth = outRad * tanf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f) * 2 + 1;
-    int texHeight = (outRad - inRad) + outRad * (1 - cosf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f)) + 1;
-    int offset = 0;
-    offset = (outRad - inRad) * tanf(angleInDegreeCoveredByTex * DEG2RAD * 0.5f);
-
-    rocksImage = GenTilableRocks(texWidth, texHeight, game->world.floor.radius, game->world.floor.radiusSeenAtRest, game->display.pixelsPerUnit * 2.75f);
-    
-    Texture2D floorTexture = LoadTextureFromImage(rocksImage);
-    SetTextureWrap(floorTexture, TEXTURE_WRAP_CLAMP);
-    SetTextureFilter(floorTexture, TEXTURE_FILTER_POINT);
-    game->world.floorTexture = floorTexture;
-    game->world.floorTextureOffset = offset;
-    game->world.floorTextureAngle = angleInDegreeCoveredByTex;
-
-    UnloadImage(rocksImage);
-    TraceLog(LOG_INFO, "Out rad %f, In rad %f, tex width %d, tex height %d offset %d", outRad, inRad, texWidth, texHeight, offset);
 }
 
 void FreeGame(Game *game)
@@ -347,10 +346,12 @@ void InitConfig(Game *game, int width, int height, float dpi)
 
         float ppy = height / game->display.cHeightUnits;
         float ppx = width / game->display.cWidthUnits;
-        if (ppx < ppy) {
+        if (ppx < ppy)
+        {
             game->display.pixelsPerUnit = ppx;
         }
-        else {
+        else
+        {
             game->display.pixelsPerUnit = ppy;
         }
         game->display.cwidth = game->display.pixelsPerUnit * game->display.cWidthUnits;
@@ -365,28 +366,37 @@ void InitConfig(Game *game, int width, int height, float dpi)
         game->config.world.rockHatchSeedOffset = game->display.pixelsPerUnit / 3;
         game->config.world.rockHatchBorder = 50.0f / game->display.pixelsPerUnit;
 
-        game->config.world.treeCount = 20;
-        game->config.world.treeWidth[0] = 10;
-        game->config.world.treeWidth[1] = 30;
+        game->config.world.treeCount = 35;
+
+        game->config.world.treeWidth[0] = game->display.pixelsPerUnit * 0.5f;
+        game->config.world.treeWidth[1] = game->display.pixelsPerUnit * 2.3f;
         game->config.world.treeHeight[0] = 4 * game->display.pixelsPerUnit;
-        game->config.world.treeHeight[1] = 20 * game->display.pixelsPerUnit;
-        game->config.world.cloudCount = 50;
-        game->config.world.cloudWidth[0] = game->display.pixelsPerUnit * 3;
-        game->config.world.cloudWidth[1] = game->display.pixelsPerUnit * 8;
-        game->config.world.cloudHeight[0] = game->display.pixelsPerUnit / 2;
-        game->config.world.cloudHeight[1] = 2 * game->display.pixelsPerUnit;
-        game->config.world.cloudFloatingHeight[0] = 6 * game->display.pixelsPerUnit;
+        game->config.world.treeHeight[1] = 8 * game->display.pixelsPerUnit;
+
+        game->config.world.treeCanopyWidth[0] = game->display.pixelsPerUnit * 4.0f;
+        game->config.world.treeCanopyWidth[1] = game->display.pixelsPerUnit * 12.0f;
+        game->config.world.treeCanopyHeight[0] = 4 * game->display.pixelsPerUnit;
+        game->config.world.treeCanopyHeight[1] = 10 * game->display.pixelsPerUnit;
+
+        game->config.world.cloudCount = 30;
+
+        game->config.world.cloudWidth[0] = game->display.pixelsPerUnit * 5;
+        game->config.world.cloudWidth[1] = game->display.pixelsPerUnit * 15;
+        game->config.world.cloudHeight[0] = game->display.pixelsPerUnit * 2;
+        game->config.world.cloudHeight[1] = 2 * game->display.pixelsPerUnit * 4;
+
+        game->config.world.cloudFloatingHeight[0] = 12 * game->display.pixelsPerUnit;
         game->config.world.cloudFloatingHeight[1] = 25 * game->display.pixelsPerUnit;
     }
 
-    game->config.player.width = game->display.pixelsPerUnit * 2.0f;
-    game->config.player.height = game->display.pixelsPerUnit * 4.0f;
+    game->config.player.width = game->display.pixelsPerUnit * 1.2f;
+    game->config.player.height = game->display.pixelsPerUnit * 2.4f;
 
     // Editor
     {
         game->config.editor.showDemoWindow = false;
         game->config.editor.showAngleValues = true;
-        game->config.editor.showRadialLines = true;
+        game->config.editor.showRadialLines = false;
     }
     game->config.gameplay.timeForFullRotation = 120.0f;
     game->config.gameplay.speedInDegreesPerSecond = 360.0f / game->config.gameplay.timeForFullRotation;
@@ -416,6 +426,7 @@ void InitGame(Game *game, int width, int height, float dpi)
         }
     }
 
+    game->state = GAME_STATE_START;
     // Init Player
     game->player = (Player){.atAngle = 0, .state = PLAYER_STATE_MOVING_RIGHT};
 
@@ -424,7 +435,6 @@ void InitGame(Game *game, int width, int height, float dpi)
         float chordLengthWhileMoving = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowWhileMoving / 2));
         float chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
         game->world.floor.radius = game->config.world.floorRadius;
-
         game->display.zoomAtRest = game->display.cwidth / chordLengthAtRest;
         game->display.zoomWhileMoving = game->display.cwidth / chordLengthWhileMoving;
         game->display.zoomStart = game->display.zoomWhileMoving;
@@ -456,6 +466,15 @@ void InitGame(Game *game, int width, int height, float dpi)
     GenerateWorld(game);
 }
 
+void DrawPlayer()
+{
+    DrawRectangle(-game.config.player.width / 2, 0, game.config.player.width, game.config.player.height, GREEN);
+}
+
+char *start = "Tap and Hold to START";
+char *stop = "Tap and Hold to FINISH";
+char *wait = "Tap and Hold to OBSERVE";
+
 void UpdateDrawFrame(void)
 {
     float deltaTime = GetFrameTime();
@@ -484,14 +503,12 @@ void UpdateDrawFrame(void)
 
     // Process Input
     {
-        switch (game.player.state)
+        switch (game.state)
         {
-
-        case PLAYER_STATE_MOVING_LEFT:
-        case PLAYER_STATE_MOVING_RIGHT:
+        case GAME_STATE_START:
             if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
             {
-                if (game.controls.tappedDuration > game.config.controls.maxDurationForQuickTap)
+                if (game.controls.tappedDuration > game.config.controls.maxDurationForQuickTap && (game.player.state == PLAYER_STATE_MOVING_RIGHT || game.player.state == PLAYER_STATE_MOVING_LEFT))
                 {
                     game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_IDLE_LEFT : PLAYER_STATE_IDLE_RIGHT;
                     game.display.zoomEaseType = game.config.camera.moveToRestEase;
@@ -501,36 +518,78 @@ void UpdateDrawFrame(void)
                     game.display.zoomTime = game.config.camera.moveToRestZoomDuration;
                 }
             }
-            else
+            if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
             {
-
-                if ((IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) && game.controls.tappedDuration <= game.config.controls.maxDurationForQuickTap)
+                TraceLog(LOG_INFO, "Tapped duration on release %f", game.controls.tappedDuration);
+                if (game.controls.tappedDuration <= game.config.controls.maxDurationForQuickTap)
                 {
                     game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
+                } else {
+                    TraceLog(LOG_INFO, "Going back to movement zoom");
+                    game.display.zoomEaseType = game.config.camera.restToMoveEase;
+                    game.display.elapsedZoomTime = 0;
+                    game.display.zoomStart = game.display.camera.zoom;
+                    game.display.zoomEnd = game.display.zoomWhileMoving;
+                    game.display.zoomTime = game.config.camera.restToMoveZoomDuration;
+                }
+                game.controls.tappedDuration = 0;
+            }
+            break;
+        case GAME_STATE_PLAYING:
+            switch (game.player.state)
+            {
+
+            case PLAYER_STATE_MOVING_LEFT:
+            case PLAYER_STATE_MOVING_RIGHT:
+                if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
+                {
+                    if (game.controls.tappedDuration > game.config.controls.maxDurationForQuickTap)
+                    {
+                        game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_IDLE_LEFT : PLAYER_STATE_IDLE_RIGHT;
+                        game.display.zoomEaseType = game.config.camera.moveToRestEase;
+                        game.display.elapsedZoomTime = 0;
+                        game.display.zoomStart = game.display.camera.zoom;
+                        game.display.zoomEnd = game.display.zoomAtRest;
+                        game.display.zoomTime = game.config.camera.moveToRestZoomDuration;
+                    }
                 }
                 else
                 {
-                    float speed = config.gameplay.speedInDegreesPerSecond * deltaTime;
-                    game.player.atAngle = game.player.atAngle + (game.player.state == PLAYER_STATE_MOVING_LEFT ? -speed : speed);
+
+                    if ((IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) && game.controls.tappedDuration <= game.config.controls.maxDurationForQuickTap)
+                    {
+                        game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
+                    }
+                    else
+                    {
+                        float speed = config.gameplay.speedInDegreesPerSecond * deltaTime;
+                        if (game.state == GAME_STATE_PLAYING)
+                        {
+                            game.player.atAngle = game.player.atAngle + (game.player.state == PLAYER_STATE_MOVING_LEFT ? -speed : speed);
+                        }
+                    }
                 }
+
+                break;
+
+            case PLAYER_STATE_IDLE_RIGHT:
+            case PLAYER_STATE_IDLE_LEFT:
+                if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
+                {
+                    game.player.state = game.player.state == PLAYER_STATE_IDLE_RIGHT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
+                    game.display.zoomEaseType = game.config.camera.restToMoveEase;
+                    game.display.elapsedZoomTime = 0;
+                    game.display.zoomStart = game.display.camera.zoom;
+                    game.display.zoomEnd = game.display.zoomWhileMoving;
+                    game.display.zoomTime = game.config.camera.restToMoveZoomDuration;
+                }
+                break;
+
+            default:
+                break;
             }
-
             break;
-
-        case PLAYER_STATE_IDLE_RIGHT:
-        case PLAYER_STATE_IDLE_LEFT:
-            if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT))
-            {
-                game.player.state = game.player.state == PLAYER_STATE_IDLE_RIGHT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
-                game.display.zoomEaseType = game.config.camera.restToMoveEase;
-                game.display.elapsedZoomTime = 0;
-                game.display.zoomStart = game.display.camera.zoom;
-                game.display.zoomEnd = game.display.zoomWhileMoving;
-                game.display.zoomTime = game.config.camera.restToMoveZoomDuration;
-            }
-            break;
-
-        default:
+        case GAME_STATE_STOPPED:
             break;
         }
     }
@@ -546,6 +605,7 @@ void UpdateDrawFrame(void)
 
         if (game.display.zoomEnd != game.display.camera.zoom)
         {
+            
             game.display.elapsedZoomTime += deltaTime;
             if (game.display.elapsedZoomTime < game.display.zoomTime)
             {
@@ -595,6 +655,20 @@ void UpdateDrawFrame(void)
             {
                 game.display.zoomEnd = game.display.camera.zoom;
                 game.display.elapsedZoomTime = 0;
+                if (game.state == GAME_STATE_START)
+                {
+                    game.state = GAME_STATE_PLAYING;
+                }
+                else if (game.state == GAME_STATE_PLAYING){
+                    if (game.world.allVisited && (game.player.state == PLAYER_STATE_IDLE_LEFT || game.player.state == PLAYER_STATE_IDLE_RIGHT))
+                    {
+                        float angleForHouse = RAD2DEG * game.display.pixelsPerUnit * 6 / (floorRadius);
+                        TraceLog(LOG_INFO, "Angle for house %f", angleForHouse);
+                        if (game.player.atAngle < angleForHouse/2 || game.player.atAngle > 360 - angleForHouse/2){
+                            game.state = GAME_STATE_STOPPED;
+                        }
+                    }
+                }
             }
         }
     }
@@ -606,11 +680,9 @@ void UpdateDrawFrame(void)
         rlImGuiBegin(); // starts the ImGui content mode. Make all ImGui calls after this
         ImGui_ShowDemoWindow(&game.config.editor.showDemoWindow);
 #endif
-        ClearBackground(WHITE);
+        ClearBackground(SKYBLUE);
 
-#pragma region Render World
-
-        if (IsKeyDown(KEY_W))
+        if (IsKeyDown(KEY_W) || game.state == GAME_STATE_STOPPED)
         {
             BeginMode2D(game.display.worldCamera);
         }
@@ -622,54 +694,183 @@ void UpdateDrawFrame(void)
         float floorRadius = game.world.floor.radius;
         float playerAngleInRad = game.player.atAngle * DEG2RAD;
 
-        // Draw Player
+        // Draw Clouds
+        for (int i = 0; i < game.world.cloudsCount; i++)
         {
+            Cloud *clouds = game.world.clouds;
+            float radius = floorRadius + clouds[i].floatingHeight;
+            float cloudX = radius * sinf(clouds[i].atAngle * DEG2RAD);
+            float cloudY = -radius * cosf(clouds[i].atAngle * DEG2RAD);
+
+            DrawRectanglePro(
+                (Rectangle){cloudX, cloudY, clouds[i].width, clouds[i].height},
+                (Vector2){clouds[i].width / 2, 0},
+                (clouds[i].atAngle + 180),
+                WHITE);
+            DrawRectangleLinesPro(
+                (Rectangle){cloudX, cloudY, clouds[i].width, clouds[i].height},
+                (clouds[i].atAngle + 180),
+                BLACK, 7);
+        }
+
+        Tree *trees = game.world.trees;
+        // Draw Trees
+        for (int i = 0; i < game.world.treesCount; i++)
+        {
+            float treeWidth = trees[i].width;
+            float treeHeight = trees[i].height;
+            float treeX = (floorRadius)*sinf(trees[i].atAngle * DEG2RAD);
+            float treeY = -floorRadius * cosf(trees[i].atAngle * DEG2RAD);
+
+            DrawRectanglePro(
+                (Rectangle){treeX, treeY, treeWidth, treeHeight},
+                (Vector2){treeWidth / 2, 0},
+                (trees[i].atAngle + 180),
+                DARKBROWN);
+            DrawRectangleLinesPro(
+                (Rectangle){treeX, treeY, treeWidth, treeHeight},
+                (trees[i].atAngle + 180),
+                BLACK, 7);
+            float canopyX = (floorRadius + treeHeight) * sinf(trees[i].atAngle * DEG2RAD);
+            float canopyY = -(floorRadius + treeHeight) * cosf(trees[i].atAngle * DEG2RAD);
+            DrawRectanglePro(
+                (Rectangle){canopyX, canopyY, trees[i].canopyWidth, trees[i].canopyHeight},
+                (Vector2){trees[i].canopyWidth / 2, 0},
+                (trees[i].atAngle + 180),
+                DARKGREEN);
+            DrawRectangleLinesPro(
+                (Rectangle){canopyX, canopyY, trees[i].canopyWidth, trees[i].canopyHeight},
+                (trees[i].atAngle + 180),
+                BLACK, 7);
+        }
+
+        Color floorColor = LIME;
+        float radiusTill = floorRadius;
+        float radiusFrom = floorRadius;
+        float floorBorderThickness = game.display.pixelsPerUnit * 0.1f;
+        float floorSeperatorThickness = game.display.pixelsPerUnit * 0.05f;
+        // Draw Grass
+        {
+            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill + 10, 0, 360, 360 * 3, BLACK, game.display.pixelsPerUnit * 1.45f);
+            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill, 0, 360, 360 * 3, floorColor, game.display.pixelsPerUnit * 1.45f);
+        }
+        // Draw House
+        {
+            float houseWidth = game.display.pixelsPerUnit * 6;
+            float houseHeight = game.display.pixelsPerUnit * 4;
+            float roofHeight = houseHeight * 0.75f;
+            float roofWidth = houseWidth * 1.5f;
+            DrawRectangle(-houseWidth / 2, -floorRadius - houseHeight - 2, houseWidth, houseHeight, BROWN);
+            DrawRectangleLinesPro((Rectangle){0, -floorRadius - houseHeight - 2, houseWidth, houseHeight}, 0, BLACK, 7);
+            DrawTriangle((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, (Vector2){0, -floorRadius - houseHeight - roofHeight}, DARKBROWN);
+            DrawLineEx((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, 7, BLACK);
+            DrawLineEx((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){0, -floorRadius - houseHeight - roofHeight}, 7, BLACK);
+            DrawLineEx((Vector2){0, -floorRadius - houseHeight - roofHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, 7, BLACK);
+            DrawRectangle(-game.config.player.width / 2, -floorRadius - game.config.player.height, game.config.player.width, game.config.player.height, BEIGE);
+            DrawRectangleLinesPro((Rectangle){0, -floorRadius - game.config.player.height, game.config.player.width, game.config.player.height}, 0, BLACK, 5);
+        }
+
+        // Draw Instructions
+        Color instructionColor = MAROON;
+        if (game.world.allVisited)
+        {
+
+            DrawText(stop, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80, instructionColor);
+        }
+        else
+        {
+            DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80, instructionColor);
+        }
+        DrawText("Tap to FLIP", round(-game.display.pixelsPerUnit * 8), round(-floorRadius * 1.2f), 160, instructionColor);
+        DrawText(wait, round(-game.display.pixelsPerUnit * 16), round(-floorRadius * 1.3f), 180, instructionColor);
+
+        // Draw floor border
+        DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorBorderThickness, 0, 360, 360, BLACK);
+        // Draw Player
+        if (game.state == GAME_STATE_PLAYING){
+
+            float wheelRadius = game.config.player.width * 0.55f;
+
+            float bodyWidth = game.config.player.width * 0.3f;
+            float bodyHeight = game.config.player.height * 0.4f;
+            float headRadius = bodyWidth * 0.7f;
+            float factor = game.player.state == PLAYER_STATE_MOVING_RIGHT || game.player.state == PLAYER_STATE_IDLE_RIGHT ? 1.0f : -1.0f;
+            // head
+            DrawCircle(
+                (floorRadius + wheelRadius * 1.75f + bodyHeight) * sinf(playerAngleInRad) - factor * bodyWidth * 0.5f * cosf(playerAngleInRad),
+                -(floorRadius + wheelRadius * 1.75f + bodyHeight) * cosf(playerAngleInRad) - factor * bodyWidth * 0.5f * sinf(playerAngleInRad),
+                headRadius, BLACK);
+            // Torso
             DrawRectanglePro(
                 (Rectangle){
-                    floorRadius * sinf(playerAngleInRad),
-                    -floorRadius * cosf(playerAngleInRad),
-                    config.player.width, config.player.height},
-                (Vector2){config.player.width / 2, 0},
+                    (floorRadius + wheelRadius * 1.3f) * sinf(playerAngleInRad) - factor * bodyWidth * 0.5f * cosf(playerAngleInRad),
+                    -(floorRadius + wheelRadius * 1.3f) * cosf(playerAngleInRad) - factor * bodyWidth * 0.5f * sinf(playerAngleInRad),
+                    bodyWidth, bodyHeight},
+                (Vector2){bodyWidth / 2, 0},
                 (180 + game.player.atAngle),
+                BLACK);
+            // Legs
+            DrawRectanglePro(
+                (Rectangle){
+                    (floorRadius + wheelRadius * 1.3f) * sinf(playerAngleInRad) - factor * bodyWidth * 0.15f * cosf(playerAngleInRad),
+                    -(floorRadius + wheelRadius * 1.3f) * cosf(playerAngleInRad) - factor * bodyWidth * 0.15f * sinf(playerAngleInRad),
+                    bodyWidth, bodyHeight * 1.2f},
+                (Vector2){bodyWidth / 2, 0},
+                (270 * factor + 30 * factor + game.player.atAngle),
+                BLACK);
+
+            DrawRing((Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad)}, wheelRadius - 10, wheelRadius, 0, 360, 60, BLACK);
+            DrawCircle((floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad), wheelRadius - 8, GRAY);
+            float spokeThickness = 3;
+            float spokeCount = 12;
+            for (int i = 0; i < spokeCount; i++)
+            {
+                DrawLineEx(
+                    (Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad)},
+                    (Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad) + wheelRadius * cosf((game.player.atAngle * 20 + i * 30) * DEG2RAD),
+                              (-floorRadius - wheelRadius) * cosf(playerAngleInRad) + wheelRadius * sinf((game.player.atAngle * 20 + i * 30) * DEG2RAD)},
+                    spokeThickness, BLACK);
+            }
+            // Arms
+            DrawRectanglePro(
+                (Rectangle){
+                    (floorRadius + wheelRadius * 2.45f) * sinf(playerAngleInRad) - factor * bodyWidth * 0.5f * cosf(playerAngleInRad),
+                    -(floorRadius + wheelRadius * 2.45f) * cosf(playerAngleInRad) - factor * bodyWidth * 0.5f * sinf(playerAngleInRad),
+                    bodyWidth * 0.5, bodyHeight * 0.8f},
+                (Vector2){bodyWidth * 0.25, 0},
+                (270 * factor + 30 * factor + game.player.atAngle),
                 BLACK);
         }
 
-
-        float deltaAngleInDegree = game.world.floorTextureAngle;
-        float deltaAngleInRad = deltaAngleInDegree * DEG2RAD;
-        
-        for (int i = 0; i * deltaAngleInRad < 2 * PI; i+=1)
+        // Draw floor
         {
-            
-            float topMiddleX = floorRadius * sinf(i*deltaAngleInRad);
-            float topMiddleY = -floorRadius * cosf(i*deltaAngleInRad);
+            floorColor = BEIGE;
+            radiusTill = radiusFrom;
+            radiusFrom = radiusFrom - game.display.pixelsPerUnit * 2.5f;
+            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
+            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
 
-            float drawX = topMiddleX - game.world.floorTexture.width * cosf(i*deltaAngleInRad) / 2;
-            float drawY = topMiddleY - game.world.floorTexture.width * sinf(i*deltaAngleInRad) / 2;
+            floorColor = BROWN;
+            radiusTill = radiusFrom;
+            radiusFrom = radiusFrom - game.display.pixelsPerUnit * 3.5f;
+            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
+            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
 
-            float scale = 1.0f;
+            floorColor = DARKBROWN;
+            radiusTill = radiusFrom;
+            radiusFrom = radiusFrom - game.display.pixelsPerUnit * 4.5f;
+            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
+            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
 
-            Vector2 position = {drawX, drawY};
-            Rectangle source = {0.0f, 0.0f, (float)game.world.floorTexture.width, (float)game.world.floorTexture.height};
-            Rectangle dest = {position.x, position.y, (float)game.world.floorTexture.width * scale, (float)game.world.floorTexture.height * scale};
-            Vector2 origin = {0, 0};
-
-            DrawTextureInRing(game.world.floorTexture, source, dest, origin, i*deltaAngleInRad*RAD2DEG, WHITE, game.world.floorTextureOffset);
-            
-            
-            
-
+            floorColor = DARKGRAY;
+            radiusTill = radiusFrom;
+            radiusFrom = 0;
+            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
+            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
         }
-
-        // DrawTextureEx(game.world.floorTexture, (Vector2){0, 0}, 0, 1.0f, WHITE);1
-        //   Draw Floor
-        DrawRing((Vector2){0, 0}, floorRadius - game.display.pixelsPerUnit / 10, floorRadius, 0, 360, 360, BROWN);
-
-        // DrawCircleSector((Vector2){0, 0}, game.world.floor.radiusSeenAtRest, 0, 360, 360, WHITE);
-
         if (config.editor.showAngleValues)
         {
-            for (int i = 0; i < 360; i += 5)
+            for (int i = 0; i < 360; i += 2)
             {
                 float angleRad = i * DEG2RAD;
                 Vector2 pos = (Vector2){
@@ -690,7 +891,6 @@ void UpdateDrawFrame(void)
             }
         }
 
-        DrawText(TextFormat("FPS %d", GetFPS()), 0, 0, 30, RED);
         {
             // Check collisions
             Vector2 topLeft = GetScreenToWorld2D((Vector2){0, 0}, game.display.camera);
@@ -772,41 +972,8 @@ void UpdateDrawFrame(void)
             }
         }
 
-        if (game.world.allVisited)
-        {
-            DrawCircleV((Vector2){0, -floorRadius}, 20, RED);
-        }
-
-        // Draw Trees
-        for (int i = 0; i < game.world.treesCount; i++)
-        {
-            Tree *trees = game.world.trees;
-            float treeX = floorRadius * sinf(trees[i].atAngle * DEG2RAD);
-            float treeY = -floorRadius * cosf(trees[i].atAngle * DEG2RAD);
-
-            DrawLineEx(
-                (Vector2){treeX, treeY},
-                (Vector2){treeX + trees[i].height * sinf(trees[i].atAngle * DEG2RAD), treeY - trees[i].height * cosf(trees[i].atAngle * DEG2RAD)},
-                2,
-                DARKGREEN);
-        }
-
-        // Draw Clouds
-        for (int i = 0; i < game.world.cloudsCount; i++)
-        {
-            Cloud *clouds = game.world.clouds;
-            float radius = floorRadius + clouds[i].floatingHeight;
-            float cloudX = radius * sinf(clouds[i].atAngle * DEG2RAD);
-            float cloudY = -radius * cosf(clouds[i].atAngle * DEG2RAD);
-
-            DrawRectanglePro(
-                (Rectangle){cloudX, cloudY, clouds[i].width, clouds[i].height},
-                (Vector2){clouds[i].width / 2, 0},
-                (clouds[i].atAngle),
-                (Color){130, 130, 130, 55});
-        }
-
         EndMode2D();
+        DrawText(TextFormat("FPS %d", GetFPS()), game.display.width / 2 - game.display.cwidth / 2 + game.display.cwidth - 100, 10, 20, BLACK);
         DrawRectangle(0, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
         DrawRectangle(game.display.width - (game.display.width - game.display.cwidth) / 2, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
 

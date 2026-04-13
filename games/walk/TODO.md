@@ -1,11 +1,8 @@
 #Today
-
+* 
 * trigger game end screen on some condition
     * transition player back to center and zoomout
 * take screenshot
-* generate bushes
-* game start screen
-* ask player to tap and based on that start on left or right
 
 #Tomorrow
 
