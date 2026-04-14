@@ -1,19 +1,17 @@
 #Today
-* 
-* trigger game end screen on some condition
-    * transition player back to center and zoomout
+* turn all pixels to screen resolution based
+* rotate camera and support only landscape on mobile
+* prepare for level editor
 * take screenshot
 
 #Tomorrow
+* world view
+    * draw footsteps
+* sun ?
+* bushes or hills?
+* hiding things
+* interacting things
 
-
-
-#Now
-* create lines from circumferences to center and outwayard
-* render lines
-* render camera display lines
-* every frame (or less frequently) 
-    * check collisions with cloud lines
 
 Ideas
 * walk

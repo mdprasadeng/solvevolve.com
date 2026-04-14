@@ -32,7 +32,16 @@ typedef struct Player
 {
     float atAngle;
     PlayerState state;
+    float movingTime;
+    float speedInDegreesPerSecond;
 } Player;
+
+typedef enum TreeType
+{
+    TREE_TYPE_RECT = 0,
+    TREE_TYPE_TRIANGLE,
+    TREE_TYPE_CIRCLE
+} TreeType;
 
 typedef struct Tree
 {
@@ -41,7 +50,9 @@ typedef struct Tree
     float canopyHeight;
     float canopyWidth;
     float atAngle;
-    int treeType;
+    TreeType treeType;
+    Color canopyColor;
+    Color trunkColor;
 } Tree;
 
 typedef struct Cloud
@@ -112,8 +123,8 @@ typedef struct Display
     int cHeightUnits;
     int pixelsPerUnit;
     float dpi;
-    Camera2D camera;
-    Camera2D radialCamera;
+    Camera2D *cameraInUse;
+    Camera2D playerCamera;
     Camera2D worldCamera;
     float zoomAtRest;
     float zoomWhileMoving;
@@ -134,10 +145,6 @@ typedef struct WorldConfig
 {
     float floorRadius;
     int treeCount;
-    float treeWidth[2];
-    float treeHeight[2];
-    float treeCanopyWidth[2];
-    float treeCanopyHeight[2];
     int cloudCount;
     float cloudWidth[2];
     float cloudHeight[2];
@@ -165,7 +172,9 @@ typedef struct CameraConfig
 typedef struct GameplayConfig
 {
     float timeForFullRotation;
-    float speedInDegreesPerSecond;
+    float speedInDegreesPerSecondStart;
+    float speedInDegreesPerSecondTop;
+    float movingTimeToTopSpeed;
 } GameplayConfig;
 
 typedef struct EditorConfig
@@ -240,6 +249,7 @@ int main(void)
 
     srand(time(NULL));
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    SetConfigFlags(FLAG_VSYNC_HINT);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(width, height, "Walk");
     InitGame(&game, width, height, dpi);
@@ -247,8 +257,8 @@ int main(void)
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
 #else
-    rlImGuiSetup(false); // sets up ImGui with ether a dark or light default theme
-    SetTargetFPS(60);    // Set our game to run at 60 frames-per-second
+    rlImGuiSetup(false);                                      // sets up ImGui with ether a dark or light default theme
+    SetTargetFPS(GetMonitorRefreshRate(GetCurrentMonitor())); // Set our game to run at 60 frames-per-second
 
     while (!WindowShouldClose()) // Detect window close button or ESC key
     {
@@ -274,18 +284,60 @@ void GenerateTrees(Game *game)
     world->treesCount = params.treeCount;
     world->trees = (Tree *)malloc(world->treesCount * sizeof(Tree));
     float averageAngleBetweenTrees = 360.0f / world->treesCount;
+    float angleOffset = averageAngleBetweenTrees * 0.1f;
     for (int i = 0; i < world->treesCount; i++)
     {
-        world->trees[i].width = randomFloat(params.treeWidth[0], params.treeWidth[1]);
-        world->trees[i].height = randomFloat(params.treeHeight[0], params.treeHeight[1]);
-        world->trees[i].canopyWidth = randomFloat(params.treeCanopyWidth[0], params.treeCanopyWidth[1]);
-        world->trees[i].canopyHeight = randomFloat(params.treeCanopyHeight[0], params.treeCanopyHeight[1]);
-        if (world->trees[i].canopyHeight > world->trees[i].canopyWidth)
-        {
-            world->trees[i].canopyHeight = world->trees[i].canopyWidth;
-        }
-        world->trees[i].atAngle = randomFloat(averageAngleBetweenTrees * i, averageAngleBetweenTrees * (i + 1));
+        world->trees[i].atAngle = randomFloat(averageAngleBetweenTrees * i + angleOffset, averageAngleBetweenTrees * (i + 1) - angleOffset);
         world->trees[i].treeType = rand() % 3; // Assuming 3 types of trees
+        switch (world->trees[i].treeType)
+        {
+        case TREE_TYPE_RECT:
+            world->trees[i].width = game->display.pixelsPerUnit * randomFloat(0.5f, 2.3f);
+            world->trees[i].height = game->display.pixelsPerUnit * randomFloat(3.5f, 13.5f);
+            world->trees[i].canopyWidth = game->display.pixelsPerUnit * randomFloat(12.0f, 18.0f);
+            world->trees[i].canopyHeight = game->display.pixelsPerUnit * randomFloat(6.0f, 12.0f);
+            break;
+        case TREE_TYPE_TRIANGLE:
+            world->trees[i].width = game->display.pixelsPerUnit * randomFloat(0.8f, 1.8f);
+            world->trees[i].height = game->display.pixelsPerUnit * randomFloat(2.5f, 9.7f);
+            world->trees[i].canopyWidth = game->display.pixelsPerUnit * randomFloat(4.5f, 8.0f);
+            world->trees[i].canopyHeight = game->display.pixelsPerUnit * randomFloat(12.0f, 19.0f);
+            break;
+        case TREE_TYPE_CIRCLE:
+            world->trees[i].width = game->display.pixelsPerUnit * randomFloat(0.5f, 1.2f);
+            world->trees[i].height = game->display.pixelsPerUnit * randomFloat(8.0f, 16.0f);
+            world->trees[i].canopyWidth = game->display.pixelsPerUnit * randomFloat(8.0f, 12.0f);
+            world->trees[i].canopyHeight = game->display.pixelsPerUnit * randomFloat(6.0f, 10.0f);
+            break;
+        default:
+            break;
+        }
+        int trunkColor = randomInt(0, 100);
+        if (trunkColor < 25)
+        {
+            world->trees[i].trunkColor = BEIGE;
+        }
+        else if (trunkColor < 75)
+        {
+            world->trees[i].trunkColor = BROWN;
+        }
+        else
+        {
+            world->trees[i].trunkColor = DARKBROWN;
+        }
+        int canopyColor = randomInt(0, 100);
+        if (canopyColor < 10)
+        {
+            world->trees[i].canopyColor = GREEN;
+        }
+        else if (canopyColor < 40)
+        {
+            world->trees[i].canopyColor = LIME;
+        }
+        else
+        {
+            world->trees[i].canopyColor = DARKGREEN;
+        }
     }
 }
 
@@ -366,17 +418,7 @@ void InitConfig(Game *game, int width, int height, float dpi)
         game->config.world.rockHatchSeedOffset = game->display.pixelsPerUnit / 3;
         game->config.world.rockHatchBorder = 50.0f / game->display.pixelsPerUnit;
 
-        game->config.world.treeCount = 35;
-
-        game->config.world.treeWidth[0] = game->display.pixelsPerUnit * 0.5f;
-        game->config.world.treeWidth[1] = game->display.pixelsPerUnit * 2.3f;
-        game->config.world.treeHeight[0] = 4 * game->display.pixelsPerUnit;
-        game->config.world.treeHeight[1] = 8 * game->display.pixelsPerUnit;
-
-        game->config.world.treeCanopyWidth[0] = game->display.pixelsPerUnit * 4.0f;
-        game->config.world.treeCanopyWidth[1] = game->display.pixelsPerUnit * 12.0f;
-        game->config.world.treeCanopyHeight[0] = 4 * game->display.pixelsPerUnit;
-        game->config.world.treeCanopyHeight[1] = 10 * game->display.pixelsPerUnit;
+        game->config.world.treeCount = 45;
 
         game->config.world.cloudCount = 30;
 
@@ -395,11 +437,13 @@ void InitConfig(Game *game, int width, int height, float dpi)
     // Editor
     {
         game->config.editor.showDemoWindow = false;
-        game->config.editor.showAngleValues = true;
+        game->config.editor.showAngleValues = false;
         game->config.editor.showRadialLines = false;
     }
     game->config.gameplay.timeForFullRotation = 120.0f;
-    game->config.gameplay.speedInDegreesPerSecond = 360.0f / game->config.gameplay.timeForFullRotation;
+    game->config.gameplay.speedInDegreesPerSecondStart = 360.0f / game->config.gameplay.timeForFullRotation;
+    game->config.gameplay.speedInDegreesPerSecondTop = game->config.gameplay.speedInDegreesPerSecondStart * 1.75f;
+    game->config.gameplay.movingTimeToTopSpeed = 20.0f;          // 5 seconds to reach top speed
     game->config.controls.maxDurationForQuickTap = 20.0f / 60.f; // 20 frames in 60 frames
 }
 
@@ -412,6 +456,10 @@ void InitGame(Game *game, int width, int height, float dpi)
     {
         float floorRadius = game->config.world.floorRadius;
         game->world.viewlineCount = 360;
+
+        game->world.earthViewlineStarts[0].x = 0;
+        game->world.earthViewlineStarts[0].y = 0;
+
         for (int i = 0; i < game->world.viewlineCount; i++)
         {
             float angle = (360.0f / game->world.viewlineCount) * i * DEG2RAD;
@@ -441,7 +489,7 @@ void InitGame(Game *game, int width, int height, float dpi)
         game->display.zoomEnd = game->display.zoomWhileMoving;
         float overviewZoom = height / (game->config.world.floorRadius * 3.2f);
 
-        game->display.camera = (Camera2D){
+        game->display.playerCamera = (Camera2D){
             .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y}, // TODO fix offset for vertical resolution
             .target = {0, -game->config.world.floorRadius},
             .zoom = game->display.zoomWhileMoving};
@@ -452,13 +500,14 @@ void InitGame(Game *game, int width, int height, float dpi)
             .rotation = 0,
             .zoom = overviewZoom};
 
-        game->display.camera.zoom = game->display.zoomAtRest;
-        Vector2 worldBottomMiddleAtRest = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
+        game->display.playerCamera.zoom = game->display.zoomAtRest;
+        Vector2 worldBottomMiddleAtRest = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.playerCamera);
         game->world.floor.radiusSeenAtRest = -worldBottomMiddleAtRest.y;
-        game->display.camera.zoom = game->display.zoomWhileMoving;
-        Vector2 worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.camera);
+        game->display.playerCamera.zoom = game->display.zoomWhileMoving;
+        Vector2 worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.playerCamera);
         game->world.floor.radiusSeenWhileMoving = -worldBottomMiddleWhileMoving.y;
         game->world.floor.gapSeenAtRest = game->world.floor.radius - game->world.floor.radiusSeenAtRest;
+        game->display.cameraInUse = &game->display.playerCamera;
 
         TraceLog(LOG_INFO, "Radius seen %f, %f, %f", game->world.floor.radius, game->world.floor.radiusSeenAtRest, game->world.floor.radius - game->world.floor.radiusSeenAtRest);
     }
@@ -480,8 +529,8 @@ void UpdateDrawFrame(void)
     float deltaTime = GetFrameTime();
     if (IsKeyPressed(KEY_Z))
     {
-        Vector2 worldCenterAt = GetWorldToScreen2D((Vector2){0, 0}, game.display.camera);
-        Vector2 worldPointAt = GetWorldToScreen2D((Vector2){game.world.floor.radius, 0}, game.display.camera);
+        Vector2 worldCenterAt = GetWorldToScreen2D((Vector2){0, 0}, game.display.playerCamera);
+        Vector2 worldPointAt = GetWorldToScreen2D((Vector2){game.world.floor.radius, 0}, game.display.playerCamera);
         TraceLog(LOG_INFO, "World Radius %f", Vector2Distance(worldPointAt, worldCenterAt));
     }
     if (IsKeyReleased(KEY_R))
@@ -492,6 +541,8 @@ void UpdateDrawFrame(void)
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
     {
         game.controls.tappedDuration = 0;
+        game.player.movingTime = 0;
+        game.player.speedInDegreesPerSecond = game.config.gameplay.speedInDegreesPerSecondStart;
     }
 
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
@@ -508,27 +559,29 @@ void UpdateDrawFrame(void)
         case GAME_STATE_START:
             if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
             {
-                if (game.controls.tappedDuration > game.config.controls.maxDurationForQuickTap && (game.player.state == PLAYER_STATE_MOVING_RIGHT || game.player.state == PLAYER_STATE_MOVING_LEFT))
+                if (game.controls.tappedDuration > game.config.controls.maxDurationForQuickTap)
                 {
-                    game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_IDLE_LEFT : PLAYER_STATE_IDLE_RIGHT;
-                    game.display.zoomEaseType = game.config.camera.moveToRestEase;
-                    game.display.elapsedZoomTime = 0;
-                    game.display.zoomStart = game.display.camera.zoom;
-                    game.display.zoomEnd = game.display.zoomAtRest;
-                    game.display.zoomTime = game.config.camera.moveToRestZoomDuration;
+                    if (game.display.zoomEnd != game.display.zoomAtRest)
+                    {
+                        game.display.zoomEaseType = game.config.camera.moveToRestEase;
+                        game.display.elapsedZoomTime = 0;
+                        game.display.zoomStart = game.display.playerCamera.zoom;
+                        game.display.zoomEnd = game.display.zoomAtRest;
+                        game.display.zoomTime = game.config.camera.moveToRestZoomDuration;
+                    }
                 }
             }
             if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
             {
-                TraceLog(LOG_INFO, "Tapped duration on release %f", game.controls.tappedDuration);
                 if (game.controls.tappedDuration <= game.config.controls.maxDurationForQuickTap)
                 {
                     game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
-                } else {
-                    TraceLog(LOG_INFO, "Going back to movement zoom");
+                }
+                else
+                {
                     game.display.zoomEaseType = game.config.camera.restToMoveEase;
                     game.display.elapsedZoomTime = 0;
-                    game.display.zoomStart = game.display.camera.zoom;
+                    game.display.zoomStart = game.display.playerCamera.zoom;
                     game.display.zoomEnd = game.display.zoomWhileMoving;
                     game.display.zoomTime = game.config.camera.restToMoveZoomDuration;
                 }
@@ -548,7 +601,7 @@ void UpdateDrawFrame(void)
                         game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_IDLE_LEFT : PLAYER_STATE_IDLE_RIGHT;
                         game.display.zoomEaseType = game.config.camera.moveToRestEase;
                         game.display.elapsedZoomTime = 0;
-                        game.display.zoomStart = game.display.camera.zoom;
+                        game.display.zoomStart = game.display.playerCamera.zoom;
                         game.display.zoomEnd = game.display.zoomAtRest;
                         game.display.zoomTime = game.config.camera.moveToRestZoomDuration;
                     }
@@ -562,10 +615,27 @@ void UpdateDrawFrame(void)
                     }
                     else
                     {
-                        float speed = config.gameplay.speedInDegreesPerSecond * deltaTime;
-                        if (game.state == GAME_STATE_PLAYING)
+
+                        game.player.movingTime += deltaTime;
+                        if (game.player.movingTime > game.config.gameplay.movingTimeToTopSpeed)
                         {
-                            game.player.atAngle = game.player.atAngle + (game.player.state == PLAYER_STATE_MOVING_LEFT ? -speed : speed);
+                            game.player.speedInDegreesPerSecond = game.config.gameplay.speedInDegreesPerSecondTop;
+                        }
+                        else
+                        {
+                            game.player.speedInDegreesPerSecond = EaseSineIn(game.player.movingTime,
+                                                                             game.config.gameplay.speedInDegreesPerSecondStart, (game.config.gameplay.speedInDegreesPerSecondTop - game.config.gameplay.speedInDegreesPerSecondStart), game.config.gameplay.movingTimeToTopSpeed);
+                        }
+
+                        float speed = game.player.speedInDegreesPerSecond * deltaTime;
+                        game.player.atAngle = game.player.atAngle + (game.player.state == PLAYER_STATE_MOVING_LEFT ? -speed : speed);
+                        if (game.player.atAngle > 360)
+                        {
+                            game.player.atAngle -= 360;
+                        }
+                        else if (game.player.atAngle < 0)
+                        {
+                            game.player.atAngle += 360;
                         }
                     }
                 }
@@ -579,7 +649,7 @@ void UpdateDrawFrame(void)
                     game.player.state = game.player.state == PLAYER_STATE_IDLE_RIGHT ? PLAYER_STATE_MOVING_RIGHT : PLAYER_STATE_MOVING_LEFT;
                     game.display.zoomEaseType = game.config.camera.restToMoveEase;
                     game.display.elapsedZoomTime = 0;
-                    game.display.zoomStart = game.display.camera.zoom;
+                    game.display.zoomStart = game.display.playerCamera.zoom;
                     game.display.zoomEnd = game.display.zoomWhileMoving;
                     game.display.zoomTime = game.config.camera.restToMoveZoomDuration;
                 }
@@ -599,53 +669,53 @@ void UpdateDrawFrame(void)
     // Update Camera
     {
         float currentCameraToAngle = game.player.atAngle;
-        game.display.camera.target.x = floorRadius * sinf(currentCameraToAngle * DEG2RAD);
-        game.display.camera.target.y = -floorRadius * cosf(currentCameraToAngle * DEG2RAD);
-        game.display.camera.rotation = -currentCameraToAngle;
+        game.display.playerCamera.target.x = floorRadius * sinf(currentCameraToAngle * DEG2RAD);
+        game.display.playerCamera.target.y = -floorRadius * cosf(currentCameraToAngle * DEG2RAD);
+        game.display.playerCamera.rotation = -currentCameraToAngle;
 
-        if (game.display.zoomEnd != game.display.camera.zoom)
+        if (game.display.zoomEnd != game.display.playerCamera.zoom)
         {
-            
+
             game.display.elapsedZoomTime += deltaTime;
             if (game.display.elapsedZoomTime < game.display.zoomTime)
             {
                 switch (game.display.zoomEaseType)
                 {
                 case EASE_LINEAR:
-                    game.display.camera.zoom = EaseLinearIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseLinearIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 case EASE_SINE_IN:
-                    game.display.camera.zoom = EaseSineIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseSineIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 case EASE_SINE_IN_OUT:
-                    game.display.camera.zoom = EaseSineInOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseSineInOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 case EASE_SINE_OUT:
-                    game.display.camera.zoom = EaseSineOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseSineOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 case EASE_CIRCULAR_IN:
-                    game.display.camera.zoom = EaseCircIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseCircIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 case EASE_CIRCULAR_OUT:
-                    game.display.camera.zoom = EaseCircOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseCircOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 case EASE_CUBIC_IN:
-                    game.display.camera.zoom = EaseCubicIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseCubicIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 case EASE_CUBIC_OUT:
-                    game.display.camera.zoom = EaseCubicOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseCubicOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 case EASE_QUADRATIC_IN:
-                    game.display.camera.zoom = EaseQuadIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseQuadIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 case EASE_QUADRATIC_OUT:
-                    game.display.camera.zoom = EaseQuadOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseQuadOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 case EASE_EXPONENTIAL_IN:
-                    game.display.camera.zoom = EaseExpoIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseExpoIn(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 case EASE_EXPONENTIAL_OUT:
-                    game.display.camera.zoom = EaseExpoOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
+                    game.display.playerCamera.zoom = EaseExpoOut(game.display.elapsedZoomTime, game.display.zoomStart, (game.display.zoomEnd - game.display.zoomStart), game.display.zoomTime);
                     break;
                 default:
                     break;
@@ -653,22 +723,30 @@ void UpdateDrawFrame(void)
             }
             else
             {
-                game.display.zoomEnd = game.display.camera.zoom;
-                game.display.elapsedZoomTime = 0;
+
                 if (game.state == GAME_STATE_START)
                 {
-                    game.state = GAME_STATE_PLAYING;
+                    if (game.display.zoomEnd == game.display.zoomAtRest)
+                    {
+                        game.state = GAME_STATE_PLAYING;
+                        game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_IDLE_LEFT : PLAYER_STATE_IDLE_RIGHT;
+                    }
                 }
-                else if (game.state == GAME_STATE_PLAYING){
+                else if (game.state == GAME_STATE_PLAYING)
+                {
                     if (game.world.allVisited && (game.player.state == PLAYER_STATE_IDLE_LEFT || game.player.state == PLAYER_STATE_IDLE_RIGHT))
                     {
                         float angleForHouse = RAD2DEG * game.display.pixelsPerUnit * 6 / (floorRadius);
                         TraceLog(LOG_INFO, "Angle for house %f", angleForHouse);
-                        if (game.player.atAngle < angleForHouse/2 || game.player.atAngle > 360 - angleForHouse/2){
+                        if (game.player.atAngle < angleForHouse / 2 || game.player.atAngle > 360 - angleForHouse / 2)
+                        {
                             game.state = GAME_STATE_STOPPED;
+                            game.display.cameraInUse = &game.display.worldCamera;
                         }
                     }
                 }
+                game.display.zoomEnd = game.display.playerCamera.zoom;
+                game.display.elapsedZoomTime = 0;
             }
         }
     }
@@ -682,14 +760,18 @@ void UpdateDrawFrame(void)
 #endif
         ClearBackground(SKYBLUE);
 
-        if (IsKeyDown(KEY_W) || game.state == GAME_STATE_STOPPED)
+        if (IsKeyPressed(KEY_TAB))
         {
-            BeginMode2D(game.display.worldCamera);
+            if (game.display.cameraInUse == &game.display.playerCamera)
+            {
+                game.display.cameraInUse = &game.display.worldCamera;
+            }
+            else
+            {
+                game.display.cameraInUse = &game.display.playerCamera;
+            }
         }
-        else
-        {
-            BeginMode2D(game.display.camera);
-        }
+        BeginMode2D(*game.display.cameraInUse);
 
         float floorRadius = game.world.floor.radius;
         float playerAngleInRad = game.player.atAngle * DEG2RAD;
@@ -706,7 +788,7 @@ void UpdateDrawFrame(void)
                 (Rectangle){cloudX, cloudY, clouds[i].width, clouds[i].height},
                 (Vector2){clouds[i].width / 2, 0},
                 (clouds[i].atAngle + 180),
-                WHITE);
+                LIGHTGRAY);
             DrawRectangleLinesPro(
                 (Rectangle){cloudX, cloudY, clouds[i].width, clouds[i].height},
                 (clouds[i].atAngle + 180),
@@ -717,31 +799,58 @@ void UpdateDrawFrame(void)
         // Draw Trees
         for (int i = 0; i < game.world.treesCount; i++)
         {
+
             float treeWidth = trees[i].width;
             float treeHeight = trees[i].height;
             float treeX = (floorRadius)*sinf(trees[i].atAngle * DEG2RAD);
             float treeY = -floorRadius * cosf(trees[i].atAngle * DEG2RAD);
-
             DrawRectanglePro(
                 (Rectangle){treeX, treeY, treeWidth, treeHeight},
                 (Vector2){treeWidth / 2, 0},
                 (trees[i].atAngle + 180),
-                DARKBROWN);
+                trees[i].trunkColor);
             DrawRectangleLinesPro(
                 (Rectangle){treeX, treeY, treeWidth, treeHeight},
                 (trees[i].atAngle + 180),
                 BLACK, 7);
+
             float canopyX = (floorRadius + treeHeight) * sinf(trees[i].atAngle * DEG2RAD);
             float canopyY = -(floorRadius + treeHeight) * cosf(trees[i].atAngle * DEG2RAD);
-            DrawRectanglePro(
-                (Rectangle){canopyX, canopyY, trees[i].canopyWidth, trees[i].canopyHeight},
-                (Vector2){trees[i].canopyWidth / 2, 0},
-                (trees[i].atAngle + 180),
-                DARKGREEN);
-            DrawRectangleLinesPro(
-                (Rectangle){canopyX, canopyY, trees[i].canopyWidth, trees[i].canopyHeight},
-                (trees[i].atAngle + 180),
-                BLACK, 7);
+            float canopyWidth = trees[i].canopyWidth;
+            float canopyHeight = trees[i].canopyHeight;
+            switch (trees[i].treeType)
+            {
+            case TREE_TYPE_RECT:
+                DrawRectanglePro(
+                    (Rectangle){canopyX, canopyY, trees[i].canopyWidth, trees[i].canopyHeight},
+                    (Vector2){trees[i].canopyWidth / 2, 0},
+                    (trees[i].atAngle + 180),
+                    trees[i].canopyColor);
+                DrawRectangleLinesPro(
+                    (Rectangle){canopyX, canopyY, trees[i].canopyWidth, trees[i].canopyHeight},
+                    (trees[i].atAngle + 180),
+                    BLACK, 7);
+                break;
+            case TREE_TYPE_TRIANGLE:
+                Vector2 top = (Vector2){
+                    (floorRadius + treeHeight + canopyHeight) * sinf(trees[i].atAngle * DEG2RAD),
+                    -(floorRadius + treeHeight + canopyHeight) * cosf(trees[i].atAngle * DEG2RAD)};
+                Vector2 left = (Vector2){
+                    (floorRadius + treeHeight) * sinf(trees[i].atAngle * DEG2RAD) - canopyWidth / 2 * cosf(trees[i].atAngle * DEG2RAD),
+                    -(floorRadius + treeHeight) * cosf(trees[i].atAngle * DEG2RAD) - canopyWidth / 2 * sinf(trees[i].atAngle * DEG2RAD)};
+                Vector2 right = (Vector2){
+                    (floorRadius + treeHeight) * sinf(trees[i].atAngle * DEG2RAD) + canopyWidth / 2 * cosf(trees[i].atAngle * DEG2RAD),
+                    -(floorRadius + treeHeight) * cosf(trees[i].atAngle * DEG2RAD) + canopyWidth / 2 * sinf(trees[i].atAngle * DEG2RAD)};
+                DrawTriangle(top, left, right, trees[i].canopyColor);
+                DrawLineEx(top, left, 7, BLACK);
+                DrawLineEx(left, right, 7, BLACK);
+                DrawLineEx(right, top, 7, BLACK);
+                break;
+            case TREE_TYPE_CIRCLE:
+                DrawCircle(canopyX, canopyY, canopyWidth / 2, trees[i].canopyColor);
+                DrawRing((Vector2){canopyX, canopyY}, canopyWidth / 2, canopyWidth / 2 + 7, 0, 360, 360, BLACK);
+                break;
+            }
         }
 
         Color floorColor = LIME;
@@ -751,11 +860,11 @@ void UpdateDrawFrame(void)
         float floorSeperatorThickness = game.display.pixelsPerUnit * 0.05f;
         // Draw Grass
         {
-            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill + 10, 0, 360, 360 * 3, BLACK, game.display.pixelsPerUnit * 1.45f);
-            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill, 0, 360, 360 * 3, floorColor, game.display.pixelsPerUnit * 1.45f);
+            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill - game.display.pixelsPerUnit * 3.2f + 10, 0, 360, 360 / 2, BLACK, game.display.pixelsPerUnit * 4.45f);
+            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill - game.display.pixelsPerUnit * 3.2f, 0, 360, 360 / 2, floorColor, game.display.pixelsPerUnit * 4.45f);
         }
         // Draw House
-        {
+        if (game.display.cameraInUse == &game.display.playerCamera) {
             float houseWidth = game.display.pixelsPerUnit * 6;
             float houseHeight = game.display.pixelsPerUnit * 4;
             float roofHeight = houseHeight * 0.75f;
@@ -772,22 +881,26 @@ void UpdateDrawFrame(void)
 
         // Draw Instructions
         Color instructionColor = MAROON;
-        if (game.world.allVisited)
+        if (game.display.cameraInUse == &game.display.playerCamera)
         {
+            if (game.world.allVisited)
+            {
 
-            DrawText(stop, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80, instructionColor);
+                DrawText(stop, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80, instructionColor);
+            }
+            else
+            {
+                DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80, instructionColor);
+            }
+            DrawText("Tap to FLIP", round(-game.display.pixelsPerUnit * 8), round(-floorRadius * 1.2f), 160, instructionColor);
+            DrawText(wait, round(-game.display.pixelsPerUnit * 16), round(-floorRadius * 1.3f), 180, instructionColor);
         }
-        else
-        {
-            DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80, instructionColor);
-        }
-        DrawText("Tap to FLIP", round(-game.display.pixelsPerUnit * 8), round(-floorRadius * 1.2f), 160, instructionColor);
-        DrawText(wait, round(-game.display.pixelsPerUnit * 16), round(-floorRadius * 1.3f), 180, instructionColor);
 
         // Draw floor border
         DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorBorderThickness, 0, 360, 360, BLACK);
         // Draw Player
-        if (game.state == GAME_STATE_PLAYING){
+        if (game.state == GAME_STATE_PLAYING && game.display.cameraInUse == &game.display.playerCamera)
+        {
 
             float wheelRadius = game.config.player.width * 0.55f;
 
@@ -822,13 +935,13 @@ void UpdateDrawFrame(void)
             DrawRing((Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad)}, wheelRadius - 10, wheelRadius, 0, 360, 60, BLACK);
             DrawCircle((floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad), wheelRadius - 8, GRAY);
             float spokeThickness = 3;
-            float spokeCount = 12;
+            float spokeCount = 3;
             for (int i = 0; i < spokeCount; i++)
             {
                 DrawLineEx(
                     (Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad)},
-                    (Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad) + wheelRadius * cosf((game.player.atAngle * 20 + i * 30) * DEG2RAD),
-                              (-floorRadius - wheelRadius) * cosf(playerAngleInRad) + wheelRadius * sinf((game.player.atAngle * 20 + i * 30) * DEG2RAD)},
+                    (Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad) + wheelRadius * cosf((game.player.atAngle * 10 + i * 120) * DEG2RAD),
+                              (-floorRadius - wheelRadius) * cosf(playerAngleInRad) + wheelRadius * sinf((game.player.atAngle * 10 + i * 120) * DEG2RAD)},
                     spokeThickness, BLACK);
             }
             // Arms
@@ -882,21 +995,13 @@ void UpdateDrawFrame(void)
                             30, 1, DARKGRAY);
             }
         }
-        if (config.editor.showRadialLines)
-        {
-            for (int i = 0; i < game.world.viewlineCount; i++)
-            {
-                DrawLineV((Vector2){0, 0}, game.world.earthViewlineStarts[i], GREEN);
-                DrawLineV(game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], RED);
-            }
-        }
 
         {
             // Check collisions
-            Vector2 topLeft = GetScreenToWorld2D((Vector2){0, 0}, game.display.camera);
-            Vector2 topRight = GetScreenToWorld2D((Vector2){game.display.width, 0}, game.display.camera);
-            Vector2 bottomLeft = GetScreenToWorld2D((Vector2){0, game.display.height}, game.display.camera);
-            Vector2 bottomRight = GetScreenToWorld2D((Vector2){game.display.width, game.display.height}, game.display.camera);
+            Vector2 topLeft = GetScreenToWorld2D((Vector2){0, 0}, game.display.playerCamera);
+            Vector2 topRight = GetScreenToWorld2D((Vector2){game.display.width, 0}, game.display.playerCamera);
+            Vector2 bottomLeft = GetScreenToWorld2D((Vector2){0, game.display.height}, game.display.playerCamera);
+            Vector2 bottomRight = GetScreenToWorld2D((Vector2){game.display.width, game.display.height}, game.display.playerCamera);
 
             if (config.editor.showRadialLines)
             {
@@ -913,10 +1018,6 @@ void UpdateDrawFrame(void)
             int i = bottomLeftAngle;
             while (true)
             {
-                if (IsKeyPressed(KEY_D))
-                {
-                    TraceLog(LOG_INFO, "Checking %d in (%f, %f)", i, bottomLeftAngle, bottomRightAngle);
-                }
 
                 // For rays on earth bottom screen is enough
                 if (CheckCollisionLines(bottomLeft, bottomRight, game.world.earthViewlineStarts[i], (Vector2){0, 0}, &collisionPoint))
@@ -972,6 +1073,40 @@ void UpdateDrawFrame(void)
             }
         }
 
+        if (config.editor.showRadialLines)
+        {
+            for (int i = game.world.viewlineCount - 1; i >= 0; i -= 1)
+            {
+                // DrawLineV((Vector2){0, 0}, game.world.earthViewlineStarts[i], GREEN);
+                DrawLineV(game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], RED);
+            }
+        }
+
+        for (int i = game.world.viewlineCount - 1; i >= 0; i -= 1)
+        {
+            DrawTriangle(
+                (Vector2){0, 0},
+                game.world.earthViewlineStarts[i],
+                game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1],
+                ColorAlpha(GRAY, 0.95f));
+
+            DrawTriangle(
+                game.world.skyViewlineEnds[i],
+                game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1],
+                game.world.skyViewlineStarts[i],
+                ColorAlpha(SKYBLUE, 0.9f));
+            DrawTriangle(
+                game.world.skyViewlineEnds[i],
+                game.world.skyViewlineEnds[(i == 0) ? game.world.viewlineCount - 1 : i - 1],
+                game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1],
+                ColorAlpha(SKYBLUE, 0.9f));
+            if (game.display.cameraInUse == &game.display.worldCamera)
+            {
+                DrawLineEx(game.world.earthViewlineStarts[i], game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], 30, BLACK);
+                DrawLineEx(game.world.skyViewlineStarts[i], game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], 30, BLACK);
+            }
+        }
+
         EndMode2D();
         DrawText(TextFormat("FPS %d", GetFPS()), game.display.width / 2 - game.display.cwidth / 2 + game.display.cwidth - 100, 10, 20, BLACK);
         DrawRectangle(0, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
@@ -979,6 +1114,7 @@ void UpdateDrawFrame(void)
 
         DrawRectangle(0, 0, game.display.width, (game.display.height - game.display.cheight) / 2, BLACK);
         DrawRectangle(0, game.display.height - (game.display.height - game.display.cheight) / 2, game.display.width, (game.display.height - game.display.cheight) / 2, BLACK);
+
 #pragma endregion
 
 #ifdef PLATFORM_DESKTOP
