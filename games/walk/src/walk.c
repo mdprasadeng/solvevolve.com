@@ -788,6 +788,7 @@ void UpdateDrawFrame(void)
                 game.display.cameraInUse = &game.display.playerCamera;
             }
         }
+        // DrawCircleSector((Vector2){game.display.width / 4, game.display.height / 4}, 50 * game.display.pixelFactor, 0, 360, 36, ORANGE);
         BeginMode2D(*game.display.cameraInUse);
 
         float floorRadius = game.world.floor.radius;
@@ -883,6 +884,7 @@ void UpdateDrawFrame(void)
         }
         // Draw House
         if (game.state != GAME_STATE_STOPPED) {
+
             float houseWidth = game.display.pixelsPerUnit * 6;
             float houseHeight = game.display.pixelsPerUnit * 4;
             float roofHeight = houseHeight * 0.75f;
@@ -1131,7 +1133,8 @@ void UpdateDrawFrame(void)
         }
 
         EndMode2D();
-        DrawText(TextFormat("FPS %d", GetFPS()), game.display.width / 2 - game.display.cwidth / 2 + game.display.cwidth - 100, 10, 20 * game.display.pixelFactor, BLACK);
+        
+        DrawText(TextFormat("FPS %d", GetFPS()), game.display.width / 2 - game.display.cwidth / 2 + game.display.cwidth - 500, 10, 20 * game.display.pixelFactor, BLACK);
         DrawRectangle(0, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
         DrawRectangle(game.display.width - (game.display.width - game.display.cwidth) / 2, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
 

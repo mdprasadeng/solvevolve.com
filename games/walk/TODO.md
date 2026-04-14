@@ -1,12 +1,15 @@
 #Today
+* end transition only
 * prepare for level editor
 * take screenshot
 * rotate camera and support only landscape on mobile
 
 #Tomorrow
+* stick man walking
 * world view
     * draw footsteps
-* sun ?
+* sun and moon following there own path
+    * wait longer to see transition and decide sky type at start or at end or at both or at any place
 * bushes or hills?
 * hiding things
 * interacting things
