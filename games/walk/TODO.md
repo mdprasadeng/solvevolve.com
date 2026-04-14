@@ -1,8 +1,7 @@
 #Today
-* turn all pixels to screen resolution based
-* rotate camera and support only landscape on mobile
 * prepare for level editor
 * take screenshot
+* rotate camera and support only landscape on mobile
 
 #Tomorrow
 * world view

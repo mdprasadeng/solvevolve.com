@@ -122,6 +122,7 @@ typedef struct Display
     int cWidthUnits;
     int cHeightUnits;
     int pixelsPerUnit;
+    float pixelFactor;
     float dpi;
     Camera2D *cameraInUse;
     Camera2D playerCamera;
@@ -134,7 +135,9 @@ typedef struct Display
     float zoomEnd;
     float zoomTime;
     float elapsedZoomTime;
-
+    Vector2 startTarget;
+    Vector2 startOffset;
+    float startRotation;
 } Display;
 
 #pragma endregion
@@ -242,8 +245,8 @@ int main(void)
     height = emscripten_run_script_int("window.innerHeight");
     dpi = emscripten_run_script_int("window.devicePixelRatio * 100") / 100.0f;
 #else
-    width = 1000 * 1.4f;
-    height = 450 * 1.4f;
+    width = 1000 * 2.4f;
+    height = 450 * 2.4f;
     dpi = 2.4;
 #endif
 
@@ -406,6 +409,8 @@ void InitConfig(Game *game, int width, int height, float dpi)
         {
             game->display.pixelsPerUnit = ppy;
         }
+        game->display.pixelFactor = game->display.pixelsPerUnit / 70.0f;
+        TraceLog(LOG_INFO, "Pixels per unit: %d", game->display.pixelsPerUnit);
         game->display.cwidth = game->display.pixelsPerUnit * game->display.cWidthUnits;
         game->display.cheight = game->display.pixelsPerUnit * game->display.cHeightUnits;
     }
@@ -515,10 +520,6 @@ void InitGame(Game *game, int width, int height, float dpi)
     GenerateWorld(game);
 }
 
-void DrawPlayer()
-{
-    DrawRectangle(-game.config.player.width / 2, 0, game.config.player.width, game.config.player.height, GREEN);
-}
 
 char *start = "Tap and Hold to START";
 char *stop = "Tap and Hold to FINISH";
@@ -720,10 +721,18 @@ void UpdateDrawFrame(void)
                 default:
                     break;
                 }
+                if (game.state == GAME_STATE_STOPPED) {
+                    game.display.playerCamera.rotation = EaseSineOut(game.display.elapsedZoomTime, game.display.startRotation, (0 - game.display.startRotation), game.display.zoomTime);
+                    game.display.playerCamera.target.x = EaseSineOut(game.display.elapsedZoomTime, game.display.startTarget.x, (0 - game.display.startTarget.x), game.display.zoomTime);
+                    game.display.playerCamera.target.y = EaseSineOut(game.display.elapsedZoomTime, game.display.startTarget.y, (0 - game.display.startTarget.y), game.display.zoomTime);
+                    game.display.playerCamera.offset.x = EaseSineOut(game.display.elapsedZoomTime, game.display.startOffset.x, (game.display.worldCamera.offset.x - game.display.startOffset.x), game.display.zoomTime);
+                    game.display.playerCamera.offset.y = EaseSineOut(game.display.elapsedZoomTime, game.display.startOffset.y, (game.display.worldCamera.offset.y - game.display.startOffset.y), game.display.zoomTime);                    
+                }
             }
             else
             {
-
+                game.display.playerCamera.zoom = game.display.zoomEnd;
+                game.display.elapsedZoomTime = 0;
                 if (game.state == GAME_STATE_START)
                 {
                     if (game.display.zoomEnd == game.display.zoomAtRest)
@@ -741,12 +750,20 @@ void UpdateDrawFrame(void)
                         if (game.player.atAngle < angleForHouse / 2 || game.player.atAngle > 360 - angleForHouse / 2)
                         {
                             game.state = GAME_STATE_STOPPED;
-                            game.display.cameraInUse = &game.display.worldCamera;
+                            game.display.zoomEaseType = EASE_LINEAR;
+                            game.display.zoomStart = game.display.playerCamera.zoom;
+                            game.display.zoomEnd = game.display.worldCamera.zoom;
+                            game.display.elapsedZoomTime = 0;
+                            game.display.zoomTime = game.config.camera.moveToRestZoomDuration * 2.0f;
+                            game.display.startTarget = game.display.playerCamera.target;
+                            game.display.startOffset = game.display.playerCamera.offset;
                         }
                     }
+                } else if (game.state == GAME_STATE_STOPPED)
+                {
+                    game.display.cameraInUse = &game.display.worldCamera;
                 }
-                game.display.zoomEnd = game.display.playerCamera.zoom;
-                game.display.elapsedZoomTime = 0;
+                
             }
         }
     }
@@ -775,6 +792,7 @@ void UpdateDrawFrame(void)
 
         float floorRadius = game.world.floor.radius;
         float playerAngleInRad = game.player.atAngle * DEG2RAD;
+        float lineThickness = game.display.pixelFactor * 7;
 
         // Draw Clouds
         for (int i = 0; i < game.world.cloudsCount; i++)
@@ -792,7 +810,7 @@ void UpdateDrawFrame(void)
             DrawRectangleLinesPro(
                 (Rectangle){cloudX, cloudY, clouds[i].width, clouds[i].height},
                 (clouds[i].atAngle + 180),
-                BLACK, 7);
+                BLACK, lineThickness);
         }
 
         Tree *trees = game.world.trees;
@@ -812,7 +830,7 @@ void UpdateDrawFrame(void)
             DrawRectangleLinesPro(
                 (Rectangle){treeX, treeY, treeWidth, treeHeight},
                 (trees[i].atAngle + 180),
-                BLACK, 7);
+                BLACK, lineThickness);
 
             float canopyX = (floorRadius + treeHeight) * sinf(trees[i].atAngle * DEG2RAD);
             float canopyY = -(floorRadius + treeHeight) * cosf(trees[i].atAngle * DEG2RAD);
@@ -829,7 +847,7 @@ void UpdateDrawFrame(void)
                 DrawRectangleLinesPro(
                     (Rectangle){canopyX, canopyY, trees[i].canopyWidth, trees[i].canopyHeight},
                     (trees[i].atAngle + 180),
-                    BLACK, 7);
+                    BLACK, lineThickness);
                 break;
             case TREE_TYPE_TRIANGLE:
                 Vector2 top = (Vector2){
@@ -842,13 +860,13 @@ void UpdateDrawFrame(void)
                     (floorRadius + treeHeight) * sinf(trees[i].atAngle * DEG2RAD) + canopyWidth / 2 * cosf(trees[i].atAngle * DEG2RAD),
                     -(floorRadius + treeHeight) * cosf(trees[i].atAngle * DEG2RAD) + canopyWidth / 2 * sinf(trees[i].atAngle * DEG2RAD)};
                 DrawTriangle(top, left, right, trees[i].canopyColor);
-                DrawLineEx(top, left, 7, BLACK);
-                DrawLineEx(left, right, 7, BLACK);
-                DrawLineEx(right, top, 7, BLACK);
+                DrawLineEx(top, left, lineThickness, BLACK);
+                DrawLineEx(left, right, lineThickness, BLACK);
+                DrawLineEx(right, top, lineThickness, BLACK);
                 break;
             case TREE_TYPE_CIRCLE:
-                DrawCircle(canopyX, canopyY, canopyWidth / 2, trees[i].canopyColor);
-                DrawRing((Vector2){canopyX, canopyY}, canopyWidth / 2, canopyWidth / 2 + 7, 0, 360, 360, BLACK);
+                DrawCircleSector((Vector2){canopyX, canopyY}, canopyWidth / 2, 0, 360, 36 * 3, trees[i].canopyColor);
+                DrawRing((Vector2){canopyX, canopyY}, canopyWidth / 2, canopyWidth / 2 + lineThickness, 0, 360, 360, BLACK);
                 break;
             }
         }
@@ -856,44 +874,44 @@ void UpdateDrawFrame(void)
         Color floorColor = LIME;
         float radiusTill = floorRadius;
         float radiusFrom = floorRadius;
-        float floorBorderThickness = game.display.pixelsPerUnit * 0.1f;
-        float floorSeperatorThickness = game.display.pixelsPerUnit * 0.05f;
+        float floorBorderThickness = game.display.pixelFactor * 7.0f;
+        float floorSeperatorThickness = game.display.pixelFactor * 4.0f;
         // Draw Grass
         {
-            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill - game.display.pixelsPerUnit * 3.2f + 10, 0, 360, 360 / 2, BLACK, game.display.pixelsPerUnit * 4.45f);
+            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill - game.display.pixelsPerUnit * 3.2f + 10 * game.display.pixelFactor, 0, 360, 360 / 2, BLACK, game.display.pixelsPerUnit * 4.45f);
             DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill - game.display.pixelsPerUnit * 3.2f, 0, 360, 360 / 2, floorColor, game.display.pixelsPerUnit * 4.45f);
         }
         // Draw House
-        if (game.display.cameraInUse == &game.display.playerCamera) {
+        if (game.state != GAME_STATE_STOPPED) {
             float houseWidth = game.display.pixelsPerUnit * 6;
             float houseHeight = game.display.pixelsPerUnit * 4;
             float roofHeight = houseHeight * 0.75f;
             float roofWidth = houseWidth * 1.5f;
             DrawRectangle(-houseWidth / 2, -floorRadius - houseHeight - 2, houseWidth, houseHeight, BROWN);
-            DrawRectangleLinesPro((Rectangle){0, -floorRadius - houseHeight - 2, houseWidth, houseHeight}, 0, BLACK, 7);
+            DrawRectangleLinesPro((Rectangle){0, -floorRadius - houseHeight - 2, houseWidth, houseHeight}, 0, BLACK, lineThickness);
             DrawTriangle((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, (Vector2){0, -floorRadius - houseHeight - roofHeight}, DARKBROWN);
-            DrawLineEx((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, 7, BLACK);
-            DrawLineEx((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){0, -floorRadius - houseHeight - roofHeight}, 7, BLACK);
-            DrawLineEx((Vector2){0, -floorRadius - houseHeight - roofHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, 7, BLACK);
+            DrawLineEx((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, lineThickness, BLACK);
+            DrawLineEx((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){0, -floorRadius - houseHeight - roofHeight}, lineThickness, BLACK);
+            DrawLineEx((Vector2){0, -floorRadius - houseHeight - roofHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, lineThickness, BLACK);
             DrawRectangle(-game.config.player.width / 2, -floorRadius - game.config.player.height, game.config.player.width, game.config.player.height, BEIGE);
-            DrawRectangleLinesPro((Rectangle){0, -floorRadius - game.config.player.height, game.config.player.width, game.config.player.height}, 0, BLACK, 5);
+            DrawRectangleLinesPro((Rectangle){0, -floorRadius - game.config.player.height, game.config.player.width, game.config.player.height}, 0, BLACK, 5 * game.display.pixelFactor);
         }
 
         // Draw Instructions
         Color instructionColor = MAROON;
-        if (game.display.cameraInUse == &game.display.playerCamera)
+        if (game.state != GAME_STATE_STOPPED)
         {
             if (game.world.allVisited)
             {
 
-                DrawText(stop, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80, instructionColor);
+                DrawText(stop, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.pixelFactor, instructionColor);
             }
             else
             {
-                DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80, instructionColor);
+                DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.pixelFactor, instructionColor);
             }
-            DrawText("Tap to FLIP", round(-game.display.pixelsPerUnit * 8), round(-floorRadius * 1.2f), 160, instructionColor);
-            DrawText(wait, round(-game.display.pixelsPerUnit * 16), round(-floorRadius * 1.3f), 180, instructionColor);
+            DrawText("Tap to FLIP", round(-game.display.pixelsPerUnit * 8), round(-floorRadius * 1.2f), 160 * game.display.pixelFactor, instructionColor);
+            DrawText(wait, round(-game.display.pixelsPerUnit * 16), round(-floorRadius * 1.3f), 180 * game.display.pixelFactor, instructionColor);
         }
 
         // Draw floor border
@@ -932,9 +950,9 @@ void UpdateDrawFrame(void)
                 (270 * factor + 30 * factor + game.player.atAngle),
                 BLACK);
 
-            DrawRing((Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad)}, wheelRadius - 10, wheelRadius, 0, 360, 60, BLACK);
-            DrawCircle((floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad), wheelRadius - 8, GRAY);
-            float spokeThickness = 3;
+            DrawRing((Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad)}, wheelRadius - 10 * game.display.pixelFactor, wheelRadius, 0, 360, 60, BLACK);
+            DrawCircle((floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad), wheelRadius - 8 * game.display.pixelFactor, GRAY);
+            float spokeThickness = 3 * game.display.pixelFactor;
             float spokeCount = 3;
             for (int i = 0; i < spokeCount; i++)
             {
@@ -1019,6 +1037,11 @@ void UpdateDrawFrame(void)
             while (true)
             {
 
+                if (game.state == GAME_STATE_STOPPED) {
+                    break;
+                }
+                
+
                 // For rays on earth bottom screen is enough
                 if (CheckCollisionLines(bottomLeft, bottomRight, game.world.earthViewlineStarts[i], (Vector2){0, 0}, &collisionPoint))
                 {
@@ -1100,15 +1123,15 @@ void UpdateDrawFrame(void)
                 game.world.skyViewlineEnds[(i == 0) ? game.world.viewlineCount - 1 : i - 1],
                 game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1],
                 ColorAlpha(SKYBLUE, 0.9f));
-            if (game.display.cameraInUse == &game.display.worldCamera)
+            if (game.state == GAME_STATE_STOPPED)
             {
-                DrawLineEx(game.world.earthViewlineStarts[i], game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], 30, BLACK);
-                DrawLineEx(game.world.skyViewlineStarts[i], game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], 30, BLACK);
+                DrawLineEx(game.world.earthViewlineStarts[i], game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], 30 * game.display.pixelFactor, BLACK);
+                DrawLineEx(game.world.skyViewlineStarts[i], game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], 30 * game.display.pixelFactor, BLACK);
             }
         }
 
         EndMode2D();
-        DrawText(TextFormat("FPS %d", GetFPS()), game.display.width / 2 - game.display.cwidth / 2 + game.display.cwidth - 100, 10, 20, BLACK);
+        DrawText(TextFormat("FPS %d", GetFPS()), game.display.width / 2 - game.display.cwidth / 2 + game.display.cwidth - 100, 10, 20 * game.display.pixelFactor, BLACK);
         DrawRectangle(0, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
         DrawRectangle(game.display.width - (game.display.width - game.display.cwidth) / 2, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
 
