@@ -1,5 +1,9 @@
 #Today
-
+* render bushes
+* render stones in earth
+* add milestones
+* check performance with 
+* render only in vicinity
 * prepare for level editor
 * take screenshot
 
@@ -17,7 +21,7 @@
 
 
 #In Future
-* Support resizing
+* 
 
 //correct
 INFO: Pixels per unit: 70

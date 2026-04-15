@@ -64,12 +64,60 @@ typedef struct Cloud
     int cloudType;
 } Cloud;
 
+typedef enum BushType
+{
+    BUSH_TYPE_CLOVER = 0,
+    BUSH_TYPE_GRASS,
+} BushType;
+
+typedef struct Bush
+{
+    float size;
+    float halfUnitCount; // grass or bushes
+    int randomSeed;
+    float atAngle;
+    BushType bushType;
+    Color bushColor;
+} Bush;
+
+typedef enum StoneType
+{
+    STONE_TYPE_FIVE = 5,
+    STONE_TYPE_SIX = 6,
+    STONE_TYPE_SEVEN = 7,
+    STONE_TYPE_EIGHT = 8
+} StoneType;
+
+typedef struct Stone
+{
+    float size;
+    float atAngle;
+    float depth;
+    StoneType stoneType;
+} Stone;
+
+typedef struct MileStone
+{
+    float size;
+    float atAngle;
+} MileStone;
+
 typedef struct World
 {
+    int treeCount;
     Tree *trees;
-    int treesCount;
+
+    int cloudCount;
     Cloud *clouds;
-    int cloudsCount;
+
+    int bushCount;
+    Bush *bushes;
+
+    int stoneCount;
+    Stone *stones;
+
+    int milestoneCount;
+    MileStone *milestones;
 
     int viewlineCount;
     Vector2 skyViewlineStarts[360];
@@ -77,9 +125,7 @@ typedef struct World
     Vector2 earthViewlineStarts[360];
     bool visted[360];
     bool allVisited;
-    Texture2D floorTexture;
-    int floorTextureOffset;
-    float floorTextureAngle;
+
 } World;
 
 typedef struct Controls
@@ -142,6 +188,9 @@ typedef struct WorldConfig
 {
     int treeCount;
     int cloudCount;
+    int bushCount;
+    int stoneCount;
+    int milestoneCount;
 } WorldConfig;
 
 typedef struct CameraConfig
@@ -263,15 +312,26 @@ int main(void)
 
 #pragma region Game Generation Functions
 
+Color GetRandomColor(int count, Color options[])
+{
+    int index = randomInt(0, count - 1);
+    return options[index];
+}
+
+int GetRandomInt(int count, int options[]) {
+    int index = randomInt(0, count - 1);
+    return options[index];
+}
+
 void GenerateTrees(Game *game)
 {
     World *world = &game->world;
     WorldConfig params = game->config.world;
-    world->treesCount = params.treeCount;
-    world->trees = (Tree *)malloc(world->treesCount * sizeof(Tree));
-    float averageAngleBetweenTrees = 360.0f / world->treesCount;
+    world->treeCount = params.treeCount;
+    world->trees = (Tree *)malloc(world->treeCount * sizeof(Tree));
+    float averageAngleBetweenTrees = 360.0f / world->treeCount;
     float angleOffset = averageAngleBetweenTrees * 0.1f;
-    for (int i = 0; i < world->treesCount; i++)
+    for (int i = 0; i < world->treeCount; i++)
     {
         world->trees[i].atAngle = randomFloat(averageAngleBetweenTrees * i + angleOffset, averageAngleBetweenTrees * (i + 1) - angleOffset);
         world->trees[i].treeType = rand() % 3; // Assuming 3 types of trees
@@ -298,43 +358,22 @@ void GenerateTrees(Game *game)
         default:
             break;
         }
-        int trunkColor = randomInt(0, 100);
-        if (trunkColor < 25)
-        {
-            world->trees[i].trunkColor = BEIGE;
-        }
-        else if (trunkColor < 75)
-        {
-            world->trees[i].trunkColor = BROWN;
-        }
-        else
-        {
-            world->trees[i].trunkColor = DARKBROWN;
-        }
-        int canopyColor = randomInt(0, 100);
-        if (canopyColor < 10)
-        {
-            world->trees[i].canopyColor = GREEN;
-        }
-        else if (canopyColor < 40)
-        {
-            world->trees[i].canopyColor = LIME;
-        }
-        else
-        {
-            world->trees[i].canopyColor = DARKGREEN;
-        }
+        Color trunkColors[] = {BROWN, BROWN, DARKBROWN, DARKBROWN, DARKBROWN};
+        world->trees[i].trunkColor = GetRandomColor(5, trunkColors);
+
+        Color canopyColors[] = {GREEN, LIME, LIME, LIME, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN};
+        world->trees[i].canopyColor = GetRandomColor(10, canopyColors);
     }
 }
 
 void GenerateClouds(Game *game)
 {
     World *world = &game->world;
-    world->cloudsCount = game->config.world.cloudCount;
-    world->clouds = (Cloud *)malloc(world->cloudsCount * sizeof(Cloud));
-    float averageAngleBetweenClouds = 360.0f / world->cloudsCount;
+    world->cloudCount = game->config.world.cloudCount;
+    world->clouds = (Cloud *)malloc(world->cloudCount * sizeof(Cloud));
+    float averageAngleBetweenClouds = 360.0f / world->cloudCount;
 
-    for (int i = 0; i < world->cloudsCount; i++)
+    for (int i = 0; i < world->cloudCount; i++)
     {
         world->clouds[i].width = randomFloat(5, 15);
         world->clouds[i].height = randomFloat(2, 8);
@@ -344,10 +383,75 @@ void GenerateClouds(Game *game)
     }
 }
 
+void GenerateBushes(Game *game)
+{
+    World *world = &game->world;
+    world->bushCount = game->config.world.bushCount;
+    world->bushes = (Bush *)malloc(world->bushCount * sizeof(Bush));
+    float averageAngleBetweenBushes = 360.0f / world->bushCount;
+
+    for (int i = 0; i < world->bushCount; i++)
+    {
+        world->bushes[i].size = randomFloat(2.7f, 4.0f);
+        world->bushes[i].randomSeed = randomInt(0, INT32_MAX);
+        world->bushes[i].atAngle = randomFloat(averageAngleBetweenBushes * i, averageAngleBetweenBushes * (i + 1));
+        world->bushes[i].bushType = randomInt(BUSH_TYPE_CLOVER, BUSH_TYPE_GRASS);
+        switch (world->bushes[i].bushType)
+        {
+        case BUSH_TYPE_CLOVER:
+        {
+            int halfUnitOptions[] = {1,1,1,1,2};
+            world->bushes[i].halfUnitCount = GetRandomInt(5, halfUnitOptions);
+            break;
+        }
+        case BUSH_TYPE_GRASS:
+            world->bushes[i].halfUnitCount = randomInt(5, 8);
+            break;
+        default:
+            break;
+        }
+        Color bushColors[] = {GREEN, LIME, LIME, LIME, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN};
+        world->bushes[i].bushColor = GetRandomColor(10, bushColors);
+    }
+}
+
+void GenerateStones(Game *game)
+{
+    World *world = &game->world;
+    world->stoneCount = game->config.world.stoneCount;
+    world->stones = (Stone *)malloc(world->stoneCount * sizeof(Stone));
+    float averageAngleBetweenStones = 360.0f / world->stoneCount;
+
+    for (int i = 0; i < world->stoneCount; i++)
+    {
+        world->stones[i].size = randomFloat(0.5f, 2.0f);
+        world->stones[i].depth = randomFloat(0.5f, 2.0f);
+        world->stones[i].atAngle = randomFloat(averageAngleBetweenStones * i, averageAngleBetweenStones * (i + 1));
+        world->stones[i].stoneType = randomInt(STONE_TYPE_FIVE, STONE_TYPE_EIGHT);
+    }
+}
+
+void GenerateMileStones(Game *game)
+{
+    World *world = &game->world;
+    world->milestoneCount = game->config.world.milestoneCount;
+    world->milestones = (MileStone *)malloc(world->milestoneCount * sizeof(MileStone));
+    float averageAngleBetweenMilestones = 360.0f / world->milestoneCount;
+
+    for (int i = 0; i < world->milestoneCount; i++)
+    {
+        world->milestones[i].size = randomFloat(1.5f, 3.0f);
+        world->milestones[i].atAngle = randomFloat(averageAngleBetweenMilestones * i, averageAngleBetweenMilestones * (i + 1));
+    }
+}
+
 void GenerateWorld(Game *game)
 {
     GenerateTrees(game);
     GenerateClouds(game);
+    GenerateBushes(game);
+    GenerateStones(game);
+    GenerateMileStones(game);
 }
 
 void FreeGame(Game *game)
@@ -355,7 +459,9 @@ void FreeGame(Game *game)
     World world = game->world;
     free(world.trees);
     free(world.clouds);
-    UnloadTexture(game->world.floorTexture);
+    free(world.bushes);
+    free(world.stones);
+    free(world.milestones);
 }
 
 #pragma endregion
@@ -393,22 +499,25 @@ void ScreenResized(Game *game, int width, int height, float dpi, bool isLandscap
     game->display.defaultRotation = isLandscape ? 90 : 0;
     float overviewZoom = (isLandscape ? width : height) / (game->display.floorRadiusUnits * game->display.pixelsPerUnit * 3.2f);
 
-    game->display.playerCamera.offset = (Vector2) {width * game->config.camera.offset.x, height * game->config.camera.offset.y};
+    game->display.playerCamera.offset = (Vector2){width * game->config.camera.offset.x, height * game->config.camera.offset.y};
     if (isLandscape)
     {
         game->display.playerCamera.offset = (Vector2){width * (1 - game->config.camera.offset.y), height * game->config.camera.offset.x};
     }
 
-    if (isFirstTime) {
+    if (isFirstTime)
+    {
         game->display.playerCamera.target = (Vector2){0, -game->display.floorRadiusUnits * game->display.pixelsPerUnit};
         game->display.playerCamera.rotation = game->display.defaultRotation;
         game->display.playerCamera.zoom = game->display.zoomWhileMoving;
-    } else {
+    }
+    else
+    {
         game->display.playerCamera.zoom = game->player.state < PLAYER_STATE_MOVING_LEFT ? game->display.zoomAtRest : game->display.zoomWhileMoving;
     }
-    
-    if (isFirstTime) {
-        
+
+    if (isFirstTime)
+    {
     }
     game->display.worldCamera.offset = (Vector2){width * 0.5f, height * 0.5f};
     game->display.worldCamera.zoom = overviewZoom;
@@ -417,7 +526,6 @@ void ScreenResized(Game *game, int width, int height, float dpi, bool isLandscap
     TraceLog(LOG_INFO, "Radius in units: %f, actual: %f", game->display.floorRadiusUnits, game->display.floorRadiusUnits * game->display.pixelsPerUnit);
     TraceLog(LOG_INFO, "Zoom at rest: %f, zoom while moving: %f", game->display.zoomAtRest, game->display.zoomWhileMoving);
     TraceLog(LOG_INFO, "Overview zoom: %f", game->display.worldCamera.zoom);
-
 }
 
 void InitConfig(Game *game, int width, int height, float dpi, bool isLandscape)
@@ -442,6 +550,9 @@ void InitConfig(Game *game, int width, int height, float dpi, bool isLandscape)
     {
         game->config.world.treeCount = 45;
         game->config.world.cloudCount = 30;
+        game->config.world.bushCount = 40;
+        game->config.world.stoneCount = 65;
+        game->config.world.milestoneCount = 6;
     }
 
     // Editor
@@ -512,7 +623,7 @@ void UpdateDrawFrame(void)
     }
 
     float deltaTime = GetFrameTime();
-    
+
     if (IsKeyReleased(KEY_R))
     {
         GenerateWorld(&game);
@@ -656,7 +767,7 @@ void UpdateDrawFrame(void)
 
     float pixelsPerUnit = game.display.pixelsPerUnit;
     float floorRadius = game.display.floorRadiusUnits * pixelsPerUnit;
-    
+
     // Update Camera
     {
         float currentCameraToAngle = game.player.atAngle;
@@ -775,12 +886,11 @@ void UpdateDrawFrame(void)
         // DrawCircleSector((Vector2){game.display.width / 4, game.display.height / 4}, 50 * game.display.lineThicknessFactor, 0, 360, 36, ORANGE);
         BeginMode2D(*game.display.cameraInUse);
 
-    
         float playerAngleInRad = game.player.atAngle * DEG2RAD;
         float lineThickness = game.display.lineThicknessFactor * 7;
-
+        int segments = 36;
         // Draw Clouds
-        for (int i = 0; i < game.world.cloudsCount; i++)
+        for (int i = 0; i < game.world.cloudCount; i++)
         {
             Cloud *clouds = game.world.clouds;
             float radius = floorRadius + clouds[i].floatingHeight * pixelsPerUnit;
@@ -800,7 +910,7 @@ void UpdateDrawFrame(void)
 
         Tree *trees = game.world.trees;
         // Draw Trees
-        for (int i = 0; i < game.world.treesCount; i++)
+        for (int i = 0; i < game.world.treeCount; i++)
         {
 
             float treeWidth = trees[i].width * pixelsPerUnit;
@@ -852,8 +962,8 @@ void UpdateDrawFrame(void)
                 break;
             }
             case TREE_TYPE_CIRCLE:
-                DrawCircleSector((Vector2){canopyX, canopyY}, canopyWidth / 2, 0, 360, 36 * 3, trees[i].canopyColor);
-                DrawRing((Vector2){canopyX, canopyY}, canopyWidth / 2, canopyWidth / 2 + lineThickness, 0, 360, 360, BLACK);
+                DrawCircleSector((Vector2){canopyX, canopyY}, canopyWidth / 2, 0, 360, 36, trees[i].canopyColor);
+                DrawRing((Vector2){canopyX, canopyY}, canopyWidth / 2, canopyWidth / 2 + lineThickness, 0, 360, 36, BLACK);
                 break;
             }
         }
@@ -863,10 +973,67 @@ void UpdateDrawFrame(void)
         float radiusFrom = floorRadius;
         float floorBorderThickness = game.display.lineThicknessFactor * 7.0f;
         float floorSeperatorThickness = game.display.lineThicknessFactor * 4.0f;
-        // Draw Grass
+        // Draw Bushes
         {
-            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill - game.display.pixelsPerUnit * 3.2f + 10 * game.display.lineThicknessFactor, 0, 360, 360 / 2, BLACK, game.display.pixelsPerUnit * 4.45f);
-            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill - game.display.pixelsPerUnit * 3.2f, 0, 360, 360 / 2, floorColor, game.display.pixelsPerUnit * 4.45f);
+            for (int i = 0; i < game.world.bushCount; i++)
+            {
+                
+
+                Bush *bushes = game.world.bushes;
+                float bushSize = bushes[i].size * pixelsPerUnit;
+                int halfUnitCount = bushes[i].halfUnitCount;
+                
+                SetRandomSeed(bushes[i].randomSeed);
+                float offsetHeight = GetRandomValue(30, 50) / 100.0f;
+                float offsetBetweenUnits = GetRandomValue(90, 120) / 100.0f;
+                float scaleRadius = GetRandomValue(60, 70) / 100.0f;
+                
+                float radius = floorRadius - bushSize * offsetHeight;
+                float bushX = radius * sinf(bushes[i].atAngle * DEG2RAD);
+                float bushY = -radius * cosf(bushes[i].atAngle * DEG2RAD);
+
+                switch (bushes[i].bushType)
+                {
+                case BUSH_TYPE_CLOVER:
+                {
+                    
+                    DrawCircleSector((Vector2){bushX, bushY}, bushSize, 0, 360, segments, bushes[i].bushColor);
+                    DrawRing((Vector2){bushX, bushY}, bushSize, bushSize + lineThickness, 0, 360, segments, BLACK);
+                    float bushRadius = bushSize * scaleRadius;
+                    for (int j = 0; j < halfUnitCount; j++)
+                    {
+                        radius = floorRadius - bushRadius * offsetHeight;
+                        bushX = radius * sinf(bushes[i].atAngle * DEG2RAD);
+                        bushY = -radius * cosf(bushes[i].atAngle * DEG2RAD);
+
+                        DrawCircleSector((Vector2){bushX - bushSize * (j + 1) * offsetBetweenUnits * cosf(bushes[i].atAngle * DEG2RAD), bushY - bushSize * (j + 1) * offsetBetweenUnits * sinf(bushes[i].atAngle * DEG2RAD)}, bushRadius, 0, 360, segments, bushes[i].bushColor);
+                        DrawRing((Vector2){bushX - bushSize * (j + 1) * offsetBetweenUnits * cosf(bushes[i].atAngle * DEG2RAD), bushY - bushSize * (j + 1) * offsetBetweenUnits * sinf(bushes[i].atAngle * DEG2RAD)}, bushRadius, bushRadius + lineThickness, 0, 360, segments, BLACK);
+
+                        DrawCircleSector((Vector2){bushX + bushSize * (j + 1) * offsetBetweenUnits * cosf(bushes[i].atAngle * DEG2RAD), bushY + bushSize * (j + 1) * offsetBetweenUnits * sinf(bushes[i].atAngle * DEG2RAD)}, bushRadius, 0, 360, segments, bushes[i].bushColor);
+                        DrawRing((Vector2){bushX + bushSize * (j + 1) * offsetBetweenUnits * cosf(bushes[i].atAngle * DEG2RAD), bushY + bushSize * (j + 1) * offsetBetweenUnits * sinf(bushes[i].atAngle * DEG2RAD)}, bushRadius, bushRadius + lineThickness, 0, 360, segments, BLACK);
+                        bushRadius *= scaleRadius;
+                    }
+                    
+                    
+                    
+                    
+                }
+                break;
+                case BUSH_TYPE_GRASS:
+                {
+                    for (size_t j = 0; j < bushes[i].halfUnitCount; j++)
+                    {
+                        // float bladeHeight = bushes[i].height * pixelsPerUnit;
+                        // float bladeX = bushX + (bushWidth / 2) * cosf(bushes[i].atAngle * DEG2RAD) - randomFloat(0, bushWidth) * cosf(bushes[i].atAngle * DEG2RAD);
+                        // float bladeY = bushY + (bushWidth / 2) * sinf(bushes[i].atAngle * DEG2RAD) - randomFloat(0, bushWidth) * sinf(bushes[i].atAngle * DEG2RAD);
+                        // DrawLineEx((Vector2){bladeX, bladeY}, (Vector2){bladeX + bladeHeight * cosf((bushes[i].atAngle - 90) * DEG2RAD), bladeY + bladeHeight * sinf((bushes[i].atAngle - 90) * DEG2RAD)}, lineThickness, bushes[i].bushColor);
+                    }
+                }
+
+                default:
+                    break;
+                }
+            }
         }
         float playerWidth = 1.2f * pixelsPerUnit;
         float playerHeight = 2.4f * pixelsPerUnit;
