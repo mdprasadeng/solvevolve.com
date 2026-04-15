@@ -393,7 +393,7 @@ void GenerateBushes(Game *game)
 
     for (int i = 0; i < world->bushCount; i++)
     {
-        
+
         world->bushes[i].randomSeed = randomInt(0, INT32_MAX);
         world->bushes[i].atAngle = randomFloat(averageAngleBetweenBushes * i, averageAngleBetweenBushes * (i + 1));
         world->bushes[i].bushType = randomInt(BUSH_TYPE_CLOVER, BUSH_TYPE_GRASS);
@@ -427,8 +427,8 @@ void GenerateStones(Game *game)
 
     for (int i = 0; i < world->stoneCount; i++)
     {
-        world->stones[i].size = randomFloat(0.5f, 2.0f);
-        world->stones[i].depth = randomFloat(0.5f, 2.0f);
+        world->stones[i].size = randomFloat(0.5f, 1.4f);
+        world->stones[i].depth = randomFloat(1.5f, 10.4f);
         world->stones[i].atAngle = randomFloat(averageAngleBetweenStones * i, averageAngleBetweenStones * (i + 1));
         world->stones[i].stoneType = randomInt(STONE_TYPE_FIVE, STONE_TYPE_EIGHT);
     }
@@ -891,7 +891,8 @@ void UpdateDrawFrame(void)
 
         float playerAngleInRad = game.player.atAngle * DEG2RAD;
         float lineThickness = game.display.lineThicknessFactor * 7;
-        if (game.display.cameraInUse == &game.display.worldCamera) {
+        if (game.display.cameraInUse == &game.display.worldCamera)
+        {
             lineThickness *= 3.0f;
         }
         int segments = 36;
@@ -1034,27 +1035,27 @@ void UpdateDrawFrame(void)
 
                     Vector2 bushCenter = {bushX, bushY};
                     float bladeSize = bushSize * ratioOfHeight;
-                    for (int j = - halfUnitCount; j <= halfUnitCount ; j++)
+                    for (int j = -halfUnitCount; j <= halfUnitCount; j++)
                     {
-                        Vector2 bladeCenter = Vector2Add(bushCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), (j) * bladeSize * 2 * offsetBetweenUnits ));   
-                        Vector2 bladeLeft = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), bladeSize));
-                        Vector2 bladeRight = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), -bladeSize));
-                        Vector2 bladeTop = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {0, -1}, bushes[i].atAngle * DEG2RAD), bushSize));
-                        
-                        DrawTriangle(bladeLeft, bladeRight, bladeTop, bushes[i].bushColor );
+                        Vector2 bladeCenter = Vector2Add(bushCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), (j)*bladeSize * 2 * offsetBetweenUnits));
+                        Vector2 bladeLeft = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), bladeSize));
+                        Vector2 bladeRight = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), -bladeSize));
+                        Vector2 bladeTop = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){0, -1}, bushes[i].atAngle * DEG2RAD), bushSize));
+
+                        DrawTriangle(bladeLeft, bladeRight, bladeTop, bushes[i].bushColor);
                         DrawLineEx(bladeLeft, bladeTop, lineThickness * 0.6f, BLACK);
                         DrawLineEx(bladeRight, bladeTop, lineThickness * 0.6f, BLACK);
                     }
                     bushSize = bushSize * scaleHeight;
-                    for (int j = - halfUnitCount; j <= halfUnitCount ; j++)
+                    for (int j = -halfUnitCount; j <= halfUnitCount; j++)
                     {
-                        
-                        Vector2 bladeCenter = Vector2Add(bushCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), (j - 0.5f) * bladeSize * 2 * offsetBetweenUnits ));   
-                        Vector2 bladeLeft = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), bladeSize));
-                        Vector2 bladeRight = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), -bladeSize));
-                        Vector2 bladeTop = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {0, -1}, bushes[i].atAngle * DEG2RAD), bushSize));
-                        
-                        DrawTriangle(bladeLeft, bladeRight, bladeTop, bushes[i].bushColor );
+
+                        Vector2 bladeCenter = Vector2Add(bushCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), (j - 0.5f) * bladeSize * 2 * offsetBetweenUnits));
+                        Vector2 bladeLeft = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), bladeSize));
+                        Vector2 bladeRight = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), -bladeSize));
+                        Vector2 bladeTop = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){0, -1}, bushes[i].atAngle * DEG2RAD), bushSize));
+
+                        DrawTriangle(bladeLeft, bladeRight, bladeTop, bushes[i].bushColor);
                         DrawLineEx(bladeLeft, bladeTop, lineThickness * 0.6f, BLACK);
                         DrawLineEx(bladeRight, bladeTop, lineThickness * 0.6f, BLACK);
                     }
@@ -1065,6 +1066,8 @@ void UpdateDrawFrame(void)
                 }
             }
         }
+        
+
         float playerWidth = 1.2f * pixelsPerUnit;
         float playerHeight = 2.4f * pixelsPerUnit;
         // Draw House
@@ -1187,6 +1190,21 @@ void UpdateDrawFrame(void)
             DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
             DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
         }
+        
+        
+        // Draw Stones
+        for (int i = 0; i < game.world.stoneCount; i++)
+        {
+            Stone *stones = game.world.stones;
+            float radius = floorRadius - stones[i].depth * pixelsPerUnit;
+
+            Vector2 stoneCenter = {radius * sinf(stones[i].atAngle * DEG2RAD),-radius * cosf(stones[i].atAngle * DEG2RAD)};
+
+            
+            DrawPoly(stoneCenter, stones[i].stoneType, stones[i].size * pixelsPerUnit, stones[i].atAngle * DEG2RAD, DARKGRAY);
+            DrawPolyLinesEx(stoneCenter, stones[i].stoneType, stones[i].size * pixelsPerUnit, stones[i].atAngle * DEG2RAD, lineThickness, BLACK);            
+
+        }
         if (config.editor.showAngleValues)
         {
             for (int i = 0; i < 360; i += 2)
@@ -1300,13 +1318,14 @@ void UpdateDrawFrame(void)
             }
         }
 
+        
         for (int i = game.world.viewlineCount - 1; i >= 0; i -= 1)
         {
-            DrawTriangle(
-                (Vector2){0, 0},
-                Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit),
-                Vector2Scale(game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
-                ColorAlpha(GRAY, 0.95f));
+            // DrawTriangle(
+            //     (Vector2){0, 0},
+            //     Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit),
+            //     Vector2Scale(game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
+            //     ColorAlpha(GRAY, 0.95f));
 
             DrawTriangle(
                 Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit),
