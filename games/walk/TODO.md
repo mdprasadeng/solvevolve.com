@@ -1,5 +1,4 @@
 #Today
-* render bushes
 * render stones in earth
 * add milestones
 * check performance with 

@@ -318,7 +318,8 @@ Color GetRandomColor(int count, Color options[])
     return options[index];
 }
 
-int GetRandomInt(int count, int options[]) {
+int GetRandomInt(int count, int options[])
+{
     int index = randomInt(0, count - 1);
     return options[index];
 }
@@ -392,7 +393,7 @@ void GenerateBushes(Game *game)
 
     for (int i = 0; i < world->bushCount; i++)
     {
-        world->bushes[i].size = randomFloat(2.7f, 4.0f);
+        
         world->bushes[i].randomSeed = randomInt(0, INT32_MAX);
         world->bushes[i].atAngle = randomFloat(averageAngleBetweenBushes * i, averageAngleBetweenBushes * (i + 1));
         world->bushes[i].bushType = randomInt(BUSH_TYPE_CLOVER, BUSH_TYPE_GRASS);
@@ -400,12 +401,14 @@ void GenerateBushes(Game *game)
         {
         case BUSH_TYPE_CLOVER:
         {
-            int halfUnitOptions[] = {1,1,1,1,2};
+            int halfUnitOptions[] = {1, 1, 1, 1, 2};
             world->bushes[i].halfUnitCount = GetRandomInt(5, halfUnitOptions);
+            world->bushes[i].size = randomFloat(1.7f, 4.0f);
             break;
         }
         case BUSH_TYPE_GRASS:
-            world->bushes[i].halfUnitCount = randomInt(5, 8);
+            world->bushes[i].halfUnitCount = randomInt(1, 4);
+            world->bushes[i].size = randomFloat(0.9f, 4.2f);
             break;
         default:
             break;
@@ -888,6 +891,9 @@ void UpdateDrawFrame(void)
 
         float playerAngleInRad = game.player.atAngle * DEG2RAD;
         float lineThickness = game.display.lineThicknessFactor * 7;
+        if (game.display.cameraInUse == &game.display.worldCamera) {
+            lineThickness *= 3.0f;
+        }
         int segments = 36;
         // Draw Clouds
         for (int i = 0; i < game.world.cloudCount; i++)
@@ -977,26 +983,25 @@ void UpdateDrawFrame(void)
         {
             for (int i = 0; i < game.world.bushCount; i++)
             {
-                
 
                 Bush *bushes = game.world.bushes;
-                float bushSize = bushes[i].size * pixelsPerUnit;
-                int halfUnitCount = bushes[i].halfUnitCount;
-                
-                SetRandomSeed(bushes[i].randomSeed);
-                float offsetHeight = GetRandomValue(30, 50) / 100.0f;
-                float offsetBetweenUnits = GetRandomValue(90, 120) / 100.0f;
-                float scaleRadius = GetRandomValue(60, 70) / 100.0f;
-                
-                float radius = floorRadius - bushSize * offsetHeight;
-                float bushX = radius * sinf(bushes[i].atAngle * DEG2RAD);
-                float bushY = -radius * cosf(bushes[i].atAngle * DEG2RAD);
 
                 switch (bushes[i].bushType)
                 {
                 case BUSH_TYPE_CLOVER:
                 {
-                    
+
+                    float bushSize = bushes[i].size * pixelsPerUnit;
+                    int halfUnitCount = bushes[i].halfUnitCount;
+                    SetRandomSeed(bushes[i].randomSeed);
+                    float offsetHeight = GetRandomValue(30, 50) / 100.0f;
+                    float offsetBetweenUnits = GetRandomValue(90, 120) / 100.0f;
+                    float scaleRadius = GetRandomValue(60, 70) / 100.0f;
+
+                    float radius = floorRadius - bushSize * offsetHeight;
+                    float bushX = radius * sinf(bushes[i].atAngle * DEG2RAD);
+                    float bushY = -radius * cosf(bushes[i].atAngle * DEG2RAD);
+
                     DrawCircleSector((Vector2){bushX, bushY}, bushSize, 0, 360, segments, bushes[i].bushColor);
                     DrawRing((Vector2){bushX, bushY}, bushSize, bushSize + lineThickness, 0, 360, segments, BLACK);
                     float bushRadius = bushSize * scaleRadius;
@@ -1013,20 +1018,45 @@ void UpdateDrawFrame(void)
                         DrawRing((Vector2){bushX + bushSize * (j + 1) * offsetBetweenUnits * cosf(bushes[i].atAngle * DEG2RAD), bushY + bushSize * (j + 1) * offsetBetweenUnits * sinf(bushes[i].atAngle * DEG2RAD)}, bushRadius, bushRadius + lineThickness, 0, 360, segments, BLACK);
                         bushRadius *= scaleRadius;
                     }
-                    
-                    
-                    
-                    
                 }
                 break;
                 case BUSH_TYPE_GRASS:
                 {
-                    for (size_t j = 0; j < bushes[i].halfUnitCount; j++)
+                    float bushSize = bushes[i].size * pixelsPerUnit;
+                    int halfUnitCount = bushes[i].halfUnitCount;
+                    SetRandomSeed(bushes[i].randomSeed);
+                    float offsetBetweenUnits = GetRandomValue(125, 145) / 100.0f;
+                    float scaleHeight = GetRandomValue(90, 130) / 100.0f;
+                    float ratioOfHeight = GetRandomValue(5, 24) / 100.0f;
+                    float radius = floorRadius - bushSize * 0.25f;
+                    float bushX = radius * sinf(bushes[i].atAngle * DEG2RAD);
+                    float bushY = -radius * cosf(bushes[i].atAngle * DEG2RAD);
+
+                    Vector2 bushCenter = {bushX, bushY};
+                    float bladeSize = bushSize * ratioOfHeight;
+                    for (int j = - halfUnitCount; j <= halfUnitCount ; j++)
                     {
-                        // float bladeHeight = bushes[i].height * pixelsPerUnit;
-                        // float bladeX = bushX + (bushWidth / 2) * cosf(bushes[i].atAngle * DEG2RAD) - randomFloat(0, bushWidth) * cosf(bushes[i].atAngle * DEG2RAD);
-                        // float bladeY = bushY + (bushWidth / 2) * sinf(bushes[i].atAngle * DEG2RAD) - randomFloat(0, bushWidth) * sinf(bushes[i].atAngle * DEG2RAD);
-                        // DrawLineEx((Vector2){bladeX, bladeY}, (Vector2){bladeX + bladeHeight * cosf((bushes[i].atAngle - 90) * DEG2RAD), bladeY + bladeHeight * sinf((bushes[i].atAngle - 90) * DEG2RAD)}, lineThickness, bushes[i].bushColor);
+                        Vector2 bladeCenter = Vector2Add(bushCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), (j) * bladeSize * 2 * offsetBetweenUnits ));   
+                        Vector2 bladeLeft = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), bladeSize));
+                        Vector2 bladeRight = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), -bladeSize));
+                        Vector2 bladeTop = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {0, -1}, bushes[i].atAngle * DEG2RAD), bushSize));
+                        
+                        DrawTriangle(bladeLeft, bladeRight, bladeTop, bushes[i].bushColor );
+                        DrawLineEx(bladeLeft, bladeTop, lineThickness * 0.6f, BLACK);
+                        DrawLineEx(bladeRight, bladeTop, lineThickness * 0.6f, BLACK);
+                    }
+                    bushSize = bushSize * scaleHeight;
+                    for (int j = - halfUnitCount; j <= halfUnitCount ; j++)
+                    {
+                        
+                        Vector2 bladeCenter = Vector2Add(bushCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), (j - 0.5f) * bladeSize * 2 * offsetBetweenUnits ));   
+                        Vector2 bladeLeft = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), bladeSize));
+                        Vector2 bladeRight = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {-1, 0}, bushes[i].atAngle * DEG2RAD), -bladeSize));
+                        Vector2 bladeTop = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2) {0, -1}, bushes[i].atAngle * DEG2RAD), bushSize));
+                        
+                        DrawTriangle(bladeLeft, bladeRight, bladeTop, bushes[i].bushColor );
+                        DrawLineEx(bladeLeft, bladeTop, lineThickness * 0.6f, BLACK);
+                        DrawLineEx(bladeRight, bladeTop, lineThickness * 0.6f, BLACK);
                     }
                 }
 
