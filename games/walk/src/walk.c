@@ -124,6 +124,7 @@ typedef struct Display
     int pixelsPerUnit;
     float pixelFactor;
     float dpi;
+    float defaultRotation;
     Camera2D *cameraInUse;
     Camera2D playerCamera;
     Camera2D worldCamera;
@@ -230,7 +231,7 @@ typedef struct Game
 Game game;
 
 #pragma region func definitions
-void InitGame(Game *game, int width, int height, float dpi);
+void InitGame(Game *game, int width, int height, float dpi, bool isLandscape);
 void FreeGame(Game *game);
 void UpdateDrawFrame(void);
 #pragma endregion
@@ -240,14 +241,17 @@ int main(void)
 
     int width, height;
     float dpi;
+    bool isLandscape = false;
 #ifdef PLATFORM_WEB
     width = emscripten_run_script_int("window.innerWidth");
     height = emscripten_run_script_int("window.innerHeight");
     dpi = emscripten_run_script_int("window.devicePixelRatio * 100") / 100.0f;
+    isLandscape = height > width && width < 768;
 #else
-    width = 1000 * 2.4f;
-    height = 450 * 2.4f;
+    width = 1000 * 1.4f;
+    height = 450 * 1.4f;
     dpi = 2.4;
+    isLandscape = height > width; // Force landscape for desktop
 #endif
 
     srand(time(NULL));
@@ -255,7 +259,7 @@ int main(void)
     SetConfigFlags(FLAG_VSYNC_HINT);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(width, height, "Walk");
-    InitGame(&game, width, height, dpi);
+    InitGame(&game, width, height, dpi, isLandscape);
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
@@ -378,7 +382,7 @@ void FreeGame(Game *game)
 
 #pragma endregion
 
-void InitConfig(Game *game, int width, int height, float dpi)
+void InitConfig(Game *game, int width, int height, float dpi, bool isLandscape)
 {
     // Camera
     {
@@ -399,8 +403,8 @@ void InitConfig(Game *game, int width, int height, float dpi)
         game->display.height = height;
         game->display.dpi = dpi;
 
-        float ppy = height / game->display.cHeightUnits;
-        float ppx = width / game->display.cWidthUnits;
+        float ppy = height / (isLandscape ? game->display.cWidthUnits : game->display.cHeightUnits);
+        float ppx = width / (isLandscape ? game->display.cHeightUnits : game->display.cWidthUnits);
         if (ppx < ppy)
         {
             game->display.pixelsPerUnit = ppx;
@@ -411,13 +415,13 @@ void InitConfig(Game *game, int width, int height, float dpi)
         }
         game->display.pixelFactor = game->display.pixelsPerUnit / 70.0f;
         TraceLog(LOG_INFO, "Pixels per unit: %d", game->display.pixelsPerUnit);
-        game->display.cwidth = game->display.pixelsPerUnit * game->display.cWidthUnits;
-        game->display.cheight = game->display.pixelsPerUnit * game->display.cHeightUnits;
+        game->display.cwidth = game->display.pixelsPerUnit * (isLandscape ? game->display.cHeightUnits : game->display.cWidthUnits);
+        game->display.cheight = game->display.pixelsPerUnit * (isLandscape ? game->display.cWidthUnits : game->display.cHeightUnits);
     }
 
     // World
     {
-        game->config.world.floorRadius = game->display.cwidth / (2 * sinf(game->config.camera.angleShowWhileMoving * DEG2RAD * 0.5f));
+        game->config.world.floorRadius = ( isLandscape ? game->display.cheight: game->display.cwidth) / (2 * sinf(game->config.camera.angleShowWhileMoving * DEG2RAD * 0.5f));
         TraceLog(LOG_INFO, "Floor radius %f", game->config.world.floorRadius);
         game->config.world.rockHatchTileSize = game->display.pixelsPerUnit * 4;
         game->config.world.rockHatchSeedOffset = game->display.pixelsPerUnit / 3;
@@ -452,10 +456,10 @@ void InitConfig(Game *game, int width, int height, float dpi)
     game->config.controls.maxDurationForQuickTap = 20.0f / 60.f; // 20 frames in 60 frames
 }
 
-void InitGame(Game *game, int width, int height, float dpi)
+void InitGame(Game *game, int width, int height, float dpi, bool isLandscape)
 {
 
-    InitConfig(game, width, height, dpi);
+    InitConfig(game, width, height, dpi, isLandscape);
 
     // Init ViewLines
     {
@@ -488,16 +492,22 @@ void InitGame(Game *game, int width, int height, float dpi)
         float chordLengthWhileMoving = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowWhileMoving / 2));
         float chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
         game->world.floor.radius = game->config.world.floorRadius;
-        game->display.zoomAtRest = game->display.cwidth / chordLengthAtRest;
-        game->display.zoomWhileMoving = game->display.cwidth / chordLengthWhileMoving;
+        game->display.zoomAtRest = ( isLandscape ? game->display.cheight : game->display.cwidth) / chordLengthAtRest;
+        game->display.zoomWhileMoving = ( isLandscape ? game->display.cheight : game->display.cwidth) / chordLengthWhileMoving;
         game->display.zoomStart = game->display.zoomWhileMoving;
         game->display.zoomEnd = game->display.zoomWhileMoving;
-        float overviewZoom = height / (game->config.world.floorRadius * 3.2f);
+        game->display.defaultRotation = isLandscape ? 90 : 0;
+        float overviewZoom = ( isLandscape ? width : height) / (game->config.world.floorRadius * 3.2f);
 
         game->display.playerCamera = (Camera2D){
-            .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y}, // TODO fix offset for vertical resolution
+            .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
             .target = {0, -game->config.world.floorRadius},
+            .rotation = game->display.defaultRotation,
             .zoom = game->display.zoomWhileMoving};
+        if (isLandscape)
+        {
+            game->display.playerCamera.offset = (Vector2){width * (1- game->config.camera.offset.y), height * game->config.camera.offset.x};
+        }
 
         game->display.worldCamera = (Camera2D){
             .offset = {width * 0.5f, height * 0.5f},
@@ -507,9 +517,15 @@ void InitGame(Game *game, int width, int height, float dpi)
 
         game->display.playerCamera.zoom = game->display.zoomAtRest;
         Vector2 worldBottomMiddleAtRest = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.playerCamera);
+        if (isLandscape) {
+            worldBottomMiddleAtRest = GetScreenToWorld2D((Vector2){0, height/2}, game->display.playerCamera);
+        }
         game->world.floor.radiusSeenAtRest = -worldBottomMiddleAtRest.y;
         game->display.playerCamera.zoom = game->display.zoomWhileMoving;
         Vector2 worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.playerCamera);
+        if (isLandscape) {
+            worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){0, height/2}, game->display.playerCamera);
+        }
         game->world.floor.radiusSeenWhileMoving = -worldBottomMiddleWhileMoving.y;
         game->world.floor.gapSeenAtRest = game->world.floor.radius - game->world.floor.radiusSeenAtRest;
         game->display.cameraInUse = &game->display.playerCamera;
@@ -519,7 +535,6 @@ void InitGame(Game *game, int width, int height, float dpi)
 
     GenerateWorld(game);
 }
-
 
 char *start = "Tap and Hold to START";
 char *stop = "Tap and Hold to FINISH";
@@ -661,6 +676,16 @@ void UpdateDrawFrame(void)
             }
             break;
         case GAME_STATE_STOPPED:
+            if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
+            {
+                game.display.zoomEaseType = EASE_LINEAR;
+                game.display.zoomStart = game.display.playerCamera.zoom;
+                game.display.zoomEnd = game.display.worldCamera.zoom;
+                game.display.elapsedZoomTime = 0;
+                game.display.zoomTime = game.config.camera.moveToRestZoomDuration * 2.0f;
+                game.display.startTarget = game.display.playerCamera.target;
+                game.display.startOffset = game.display.playerCamera.offset;
+            }
             break;
         }
     }
@@ -672,7 +697,7 @@ void UpdateDrawFrame(void)
         float currentCameraToAngle = game.player.atAngle;
         game.display.playerCamera.target.x = floorRadius * sinf(currentCameraToAngle * DEG2RAD);
         game.display.playerCamera.target.y = -floorRadius * cosf(currentCameraToAngle * DEG2RAD);
-        game.display.playerCamera.rotation = -currentCameraToAngle;
+        game.display.playerCamera.rotation = game.display.defaultRotation - currentCameraToAngle;
 
         if (game.display.zoomEnd != game.display.playerCamera.zoom)
         {
@@ -721,12 +746,13 @@ void UpdateDrawFrame(void)
                 default:
                     break;
                 }
-                if (game.state == GAME_STATE_STOPPED) {
+                if (game.state == GAME_STATE_STOPPED)
+                {
                     game.display.playerCamera.rotation = EaseSineOut(game.display.elapsedZoomTime, game.display.startRotation, (0 - game.display.startRotation), game.display.zoomTime);
                     game.display.playerCamera.target.x = EaseSineOut(game.display.elapsedZoomTime, game.display.startTarget.x, (0 - game.display.startTarget.x), game.display.zoomTime);
                     game.display.playerCamera.target.y = EaseSineOut(game.display.elapsedZoomTime, game.display.startTarget.y, (0 - game.display.startTarget.y), game.display.zoomTime);
                     game.display.playerCamera.offset.x = EaseSineOut(game.display.elapsedZoomTime, game.display.startOffset.x, (game.display.worldCamera.offset.x - game.display.startOffset.x), game.display.zoomTime);
-                    game.display.playerCamera.offset.y = EaseSineOut(game.display.elapsedZoomTime, game.display.startOffset.y, (game.display.worldCamera.offset.y - game.display.startOffset.y), game.display.zoomTime);                    
+                    game.display.playerCamera.offset.y = EaseSineOut(game.display.elapsedZoomTime, game.display.startOffset.y, (game.display.worldCamera.offset.y - game.display.startOffset.y), game.display.zoomTime);
                 }
             }
             else
@@ -750,20 +776,13 @@ void UpdateDrawFrame(void)
                         if (game.player.atAngle < angleForHouse / 2 || game.player.atAngle > 360 - angleForHouse / 2)
                         {
                             game.state = GAME_STATE_STOPPED;
-                            game.display.zoomEaseType = EASE_LINEAR;
-                            game.display.zoomStart = game.display.playerCamera.zoom;
-                            game.display.zoomEnd = game.display.worldCamera.zoom;
-                            game.display.elapsedZoomTime = 0;
-                            game.display.zoomTime = game.config.camera.moveToRestZoomDuration * 2.0f;
-                            game.display.startTarget = game.display.playerCamera.target;
-                            game.display.startOffset = game.display.playerCamera.offset;
                         }
                     }
-                } else if (game.state == GAME_STATE_STOPPED)
+                }
+                else if (game.state == GAME_STATE_STOPPED)
                 {
                     game.display.cameraInUse = &game.display.worldCamera;
                 }
-                
             }
         }
     }
@@ -851,6 +870,7 @@ void UpdateDrawFrame(void)
                     BLACK, lineThickness);
                 break;
             case TREE_TYPE_TRIANGLE:
+            {
                 Vector2 top = (Vector2){
                     (floorRadius + treeHeight + canopyHeight) * sinf(trees[i].atAngle * DEG2RAD),
                     -(floorRadius + treeHeight + canopyHeight) * cosf(trees[i].atAngle * DEG2RAD)};
@@ -865,6 +885,7 @@ void UpdateDrawFrame(void)
                 DrawLineEx(left, right, lineThickness, BLACK);
                 DrawLineEx(right, top, lineThickness, BLACK);
                 break;
+            }
             case TREE_TYPE_CIRCLE:
                 DrawCircleSector((Vector2){canopyX, canopyY}, canopyWidth / 2, 0, 360, 36 * 3, trees[i].canopyColor);
                 DrawRing((Vector2){canopyX, canopyY}, canopyWidth / 2, canopyWidth / 2 + lineThickness, 0, 360, 360, BLACK);
@@ -883,7 +904,8 @@ void UpdateDrawFrame(void)
             DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill - game.display.pixelsPerUnit * 3.2f, 0, 360, 360 / 2, floorColor, game.display.pixelsPerUnit * 4.45f);
         }
         // Draw House
-        if (game.state != GAME_STATE_STOPPED) {
+        if (game.state != GAME_STATE_STOPPED)
+        {
 
             float houseWidth = game.display.pixelsPerUnit * 6;
             float houseHeight = game.display.pixelsPerUnit * 4;
@@ -1022,6 +1044,13 @@ void UpdateDrawFrame(void)
             Vector2 topRight = GetScreenToWorld2D((Vector2){game.display.width, 0}, game.display.playerCamera);
             Vector2 bottomLeft = GetScreenToWorld2D((Vector2){0, game.display.height}, game.display.playerCamera);
             Vector2 bottomRight = GetScreenToWorld2D((Vector2){game.display.width, game.display.height}, game.display.playerCamera);
+            if (game.display.defaultRotation == 90)
+            {
+                bottomLeft = GetScreenToWorld2D((Vector2){0, 0}, game.display.playerCamera);
+                topLeft = GetScreenToWorld2D((Vector2){game.display.width, 0}, game.display.playerCamera);
+                topRight = GetScreenToWorld2D((Vector2){game.display.width, game.display.height}, game.display.playerCamera);
+                bottomRight = GetScreenToWorld2D((Vector2){0, game.display.height}, game.display.playerCamera);
+            }
 
             if (config.editor.showRadialLines)
             {
@@ -1039,10 +1068,10 @@ void UpdateDrawFrame(void)
             while (true)
             {
 
-                if (game.state == GAME_STATE_STOPPED) {
+                if (game.state == GAME_STATE_STOPPED)
+                {
                     break;
                 }
-                
 
                 // For rays on earth bottom screen is enough
                 if (CheckCollisionLines(bottomLeft, bottomRight, game.world.earthViewlineStarts[i], (Vector2){0, 0}, &collisionPoint))
@@ -1133,7 +1162,7 @@ void UpdateDrawFrame(void)
         }
 
         EndMode2D();
-        
+
         DrawText(TextFormat("FPS %d", GetFPS()), game.display.width / 2 - game.display.cwidth / 2 + game.display.cwidth - 500, 10, 20 * game.display.pixelFactor, BLACK);
         DrawRectangle(0, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
         DrawRectangle(game.display.width - (game.display.width - game.display.cwidth) / 2, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);

@@ -1,8 +1,18 @@
 #Today
-* end transition only
 * prepare for level editor
 * take screenshot
 * rotate camera and support only landscape on mobile
+
+//correct
+INFO: Pixels per unit: 70
+INFO: Floor radius 4478.917969
+INFO: Radius seen 4478.917969, 3723.100830, 755.817139
+
+
+INFO: Pixels per unit: 70
+INFO: Floor radius 4478.917969
+INFO: Radius seen 4478.917969, 3723.100830, 755.817139
+
 
 #Tomorrow
 * stick man walking
@@ -13,6 +23,7 @@
 * bushes or hills?
 * hiding things
 * interacting things
+* abstraction for interacting things position
 
 
 Ideas

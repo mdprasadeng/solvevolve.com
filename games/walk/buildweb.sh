@@ -9,7 +9,7 @@ LIB_PATH="-L../lib/bin"
 WLIB_PATH="-L ../lib/bin/web"
 LIBS="-lrlimgui -lraylib -lopengl32 -lgdi32 -lwinmm -luser32 -lshell32 -lstdc++"
 WLIBGS="-lraylib.web"
-CFLAGS="-g -Wall -Werror "
+CFLAGS="-g -Wall -Werror"
 OPTFLAGS="-DPLATFORM_WEB -DDGRAPHICS_API_OPENGL_ES2 -s USE_GLFW=3 -o walk.html --shell-file ../lib/src/raylib/src/shell.html"
 
 
