@@ -1,19 +1,16 @@
 #Today
-* add milestones
-* support textures
-* check performance with 
-* render only in vicinity
 * prepare for level editor
 * take screenshot
 
-
 #Tomorrow
+* check performance with 
+* render only in vicinity
+* 
 * stick man walking
 * world view
     * draw footsteps
 * sun and moon following there own path
     * wait longer to see transition and decide sky type at start or at end or at both or at any place
-* bushes or hills?
 * hiding things
 * interacting things
 * abstraction for interacting things position

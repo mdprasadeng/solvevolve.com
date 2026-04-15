@@ -131,6 +131,7 @@ typedef struct World
 typedef struct Controls
 {
     float tappedDuration;
+    bool tappedOnLeft;
 } Controls;
 
 typedef enum
@@ -634,6 +635,7 @@ void UpdateDrawFrame(void)
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
     {
+        game.controls.tappedOnLeft = GetMousePosition().x < game.display.width / 2;
         game.controls.tappedDuration = 0;
         game.player.movingTime = 0;
         game.player.speedInDegreesPerSecond = game.config.gameplay.speedInDegreesPerSecondStart;
@@ -843,7 +845,7 @@ void UpdateDrawFrame(void)
                     if (game.display.zoomEnd == game.display.zoomAtRest)
                     {
                         game.state = GAME_STATE_PLAYING;
-                        game.player.state = game.player.state == PLAYER_STATE_MOVING_LEFT ? PLAYER_STATE_IDLE_LEFT : PLAYER_STATE_IDLE_RIGHT;
+                        game.player.state = game.controls.tappedOnLeft ? PLAYER_STATE_IDLE_LEFT : PLAYER_STATE_IDLE_RIGHT;
                     }
                 }
                 else if (game.state == GAME_STATE_PLAYING)
@@ -1122,7 +1124,8 @@ void UpdateDrawFrame(void)
             }
             else
             {
-                DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.lineThicknessFactor, instructionColor);
+                if (game.state == GAME_STATE_START)
+                    DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.lineThicknessFactor, instructionColor);
             }
             DrawText("Tap to FLIP", round(-game.display.pixelsPerUnit * 8), round(-floorRadius * 1.2f), 160 * game.display.lineThicknessFactor, instructionColor);
             DrawText(wait, round(-game.display.pixelsPerUnit * 16), round(-floorRadius * 1.3f), 180 * game.display.lineThicknessFactor, instructionColor);
