@@ -1343,11 +1343,11 @@ void UpdateDrawFrame(void)
 
         for (int i = game.world.viewlineCount - 1; i >= 0; i -= 1)
         {
-            // DrawTriangle(
-            //     (Vector2){0, 0},
-            //     Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit),
-            //     Vector2Scale(game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
-            //     ColorAlpha(GRAY, 0.95f));
+            DrawTriangle(
+                (Vector2){0, 0},
+                Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit),
+                Vector2Scale(game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
+                ColorAlpha(GRAY, 0.95f));
 
             DrawTriangle(
                 Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit),
