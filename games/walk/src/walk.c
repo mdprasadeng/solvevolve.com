@@ -439,12 +439,12 @@ void GenerateMileStones(Game *game)
     World *world = &game->world;
     world->milestoneCount = game->config.world.milestoneCount;
     world->milestones = (MileStone *)malloc(world->milestoneCount * sizeof(MileStone));
-    float averageAngleBetweenMilestones = 360.0f / world->milestoneCount;
+    float averageAngleBetweenMilestones = 360.0f / (world->milestoneCount + 1);
 
     for (int i = 0; i < world->milestoneCount; i++)
     {
         world->milestones[i].size = randomFloat(1.5f, 3.0f);
-        world->milestones[i].atAngle = randomFloat(averageAngleBetweenMilestones * i, averageAngleBetweenMilestones * (i + 1));
+        world->milestones[i].atAngle = averageAngleBetweenMilestones * (i + 1);
     }
 }
 
@@ -555,7 +555,7 @@ void InitConfig(Game *game, int width, int height, float dpi, bool isLandscape)
         game->config.world.cloudCount = 30;
         game->config.world.bushCount = 40;
         game->config.world.stoneCount = 65;
-        game->config.world.milestoneCount = 6;
+        game->config.world.milestoneCount = 5;
     }
 
     // Editor
@@ -1066,7 +1066,30 @@ void UpdateDrawFrame(void)
                 }
             }
         }
-        
+
+        // Draw Milestones
+        if (game.display.cameraInUse == &game.display.playerCamera)
+        {
+            for (int i = 0; i < game.world.milestoneCount; i++)
+            {
+                MileStone *milestones = game.world.milestones;
+                float mileStoneSize = 2 * pixelsPerUnit;
+
+                float radius = floorRadius + mileStoneSize * 0.8f;
+                float mileStoneX = radius * sinf(milestones[i].atAngle * DEG2RAD);
+                float mileStoneY = -radius * cosf(milestones[i].atAngle * DEG2RAD);
+                Vector2 mileStoneCenter = (Vector2){mileStoneX, mileStoneY};
+
+                DrawPoly(mileStoneCenter, 5, mileStoneSize, 270 + milestones[i].atAngle, ColorLerp(WHITE, GRAY, 0.6f));
+                DrawPolyLinesEx(mileStoneCenter, 5, mileStoneSize, 270 + milestones[i].atAngle, lineThickness, BLACK);
+
+                float circleRadius = mileStoneSize * 0.56f;
+                float angleOffset = 3.4f;
+                DrawRing(mileStoneCenter, circleRadius, circleRadius + lineThickness * 1.4f, 0, 360, 36, BLACK);
+                DrawRing(mileStoneCenter, circleRadius, circleRadius + lineThickness * 1.4f, milestones[i].atAngle - angleOffset - 90, milestones[i].atAngle + angleOffset - 90, 3, GREEN);
+                DrawRing(mileStoneCenter, circleRadius, circleRadius + lineThickness * 1.4f, milestones[i].atAngle * 2 - angleOffset - 90, milestones[i].atAngle * 2 + angleOffset - 90, 3, RED);
+            }
+        }
 
         float playerWidth = 1.2f * pixelsPerUnit;
         float playerHeight = 2.4f * pixelsPerUnit;
@@ -1190,20 +1213,17 @@ void UpdateDrawFrame(void)
             DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
             DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
         }
-        
-        
+
         // Draw Stones
         for (int i = 0; i < game.world.stoneCount; i++)
         {
             Stone *stones = game.world.stones;
             float radius = floorRadius - stones[i].depth * pixelsPerUnit;
 
-            Vector2 stoneCenter = {radius * sinf(stones[i].atAngle * DEG2RAD),-radius * cosf(stones[i].atAngle * DEG2RAD)};
+            Vector2 stoneCenter = {radius * sinf(stones[i].atAngle * DEG2RAD), -radius * cosf(stones[i].atAngle * DEG2RAD)};
 
-            
-            DrawPoly(stoneCenter, stones[i].stoneType, stones[i].size * pixelsPerUnit, stones[i].atAngle * DEG2RAD, DARKGRAY);
-            DrawPolyLinesEx(stoneCenter, stones[i].stoneType, stones[i].size * pixelsPerUnit, stones[i].atAngle * DEG2RAD, lineThickness, BLACK);            
-
+            DrawPoly(stoneCenter, stones[i].stoneType, stones[i].size * pixelsPerUnit, stones[i].atAngle, DARKGRAY);
+            DrawPolyLinesEx(stoneCenter, stones[i].stoneType, stones[i].size * pixelsPerUnit, stones[i].atAngle, lineThickness, BLACK);
         }
         if (config.editor.showAngleValues)
         {
@@ -1318,7 +1338,6 @@ void UpdateDrawFrame(void)
             }
         }
 
-        
         for (int i = game.world.viewlineCount - 1; i >= 0; i -= 1)
         {
             // DrawTriangle(

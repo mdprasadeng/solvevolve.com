@@ -1,6 +1,6 @@
 #Today
-* render stones in earth
 * add milestones
+* support textures
 * check performance with 
 * render only in vicinity
 * prepare for level editor
