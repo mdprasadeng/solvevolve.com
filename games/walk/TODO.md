@@ -1,17 +1,7 @@
 #Today
+
 * prepare for level editor
 * take screenshot
-* rotate camera and support only landscape on mobile
-
-//correct
-INFO: Pixels per unit: 70
-INFO: Floor radius 4478.917969
-INFO: Radius seen 4478.917969, 3723.100830, 755.817139
-
-
-INFO: Pixels per unit: 70
-INFO: Floor radius 4478.917969
-INFO: Radius seen 4478.917969, 3723.100830, 755.817139
 
 
 #Tomorrow
@@ -25,6 +15,14 @@ INFO: Radius seen 4478.917969, 3723.100830, 755.817139
 * interacting things
 * abstraction for interacting things position
 
+
+#In Future
+* Support resizing
+
+//correct
+INFO: Pixels per unit: 70
+INFO: Floor radius 4478.917969
+INFO: Radius seen 4478.917969, 3723.100830, 755.817139
 
 Ideas
 * walk

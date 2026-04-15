@@ -64,17 +64,8 @@ typedef struct Cloud
     int cloudType;
 } Cloud;
 
-typedef struct Floor
-{
-    float radius;
-    float radiusSeenWhileMoving;
-    float radiusSeenAtRest;
-    float gapSeenAtRest;
-} Floor;
-
 typedef struct World
 {
-    Floor floor;
     Tree *trees;
     int treesCount;
     Cloud *clouds;
@@ -117,14 +108,16 @@ typedef struct Display
 {
     int width;
     int height;
-    int cwidth;
-    int cheight;
+    int cwidth;  // corrected width
+    int cheight; // corrected height
     int cWidthUnits;
     int cHeightUnits;
     int pixelsPerUnit;
-    float pixelFactor;
+    float lineThicknessFactor;
     float dpi;
     float defaultRotation;
+    float floorRadiusUnits;
+
     Camera2D *cameraInUse;
     Camera2D playerCamera;
     Camera2D worldCamera;
@@ -147,15 +140,8 @@ typedef struct Display
 
 typedef struct WorldConfig
 {
-    float floorRadius;
     int treeCount;
     int cloudCount;
-    float cloudWidth[2];
-    float cloudHeight[2];
-    float cloudFloatingHeight[2];
-    int rockHatchTileSize;
-    int rockHatchSeedOffset;
-    float rockHatchBorder;
 } WorldConfig;
 
 typedef struct CameraConfig
@@ -193,12 +179,6 @@ typedef struct ContorlsConfig
     float maxDurationForQuickTap;
 } ContorlsConfig;
 
-typedef struct PlayerConfig
-{
-    float width;
-    float height;
-} PlayerConfig;
-
 typedef struct Config
 {
     WorldConfig world;
@@ -206,7 +186,6 @@ typedef struct Config
     GameplayConfig gameplay;
     EditorConfig editor;
     ContorlsConfig controls;
-    PlayerConfig player;
 } Config;
 
 #pragma endregion
@@ -299,22 +278,22 @@ void GenerateTrees(Game *game)
         switch (world->trees[i].treeType)
         {
         case TREE_TYPE_RECT:
-            world->trees[i].width = game->display.pixelsPerUnit * randomFloat(0.5f, 2.3f);
-            world->trees[i].height = game->display.pixelsPerUnit * randomFloat(3.5f, 13.5f);
-            world->trees[i].canopyWidth = game->display.pixelsPerUnit * randomFloat(12.0f, 18.0f);
-            world->trees[i].canopyHeight = game->display.pixelsPerUnit * randomFloat(6.0f, 12.0f);
+            world->trees[i].width = randomFloat(0.5f, 2.3f);
+            world->trees[i].height = randomFloat(3.5f, 13.5f);
+            world->trees[i].canopyWidth = randomFloat(12.0f, 18.0f);
+            world->trees[i].canopyHeight = randomFloat(6.0f, 12.0f);
             break;
         case TREE_TYPE_TRIANGLE:
-            world->trees[i].width = game->display.pixelsPerUnit * randomFloat(0.8f, 1.8f);
-            world->trees[i].height = game->display.pixelsPerUnit * randomFloat(2.5f, 9.7f);
-            world->trees[i].canopyWidth = game->display.pixelsPerUnit * randomFloat(4.5f, 8.0f);
-            world->trees[i].canopyHeight = game->display.pixelsPerUnit * randomFloat(12.0f, 19.0f);
+            world->trees[i].width = randomFloat(0.8f, 1.8f);
+            world->trees[i].height = randomFloat(2.5f, 9.7f);
+            world->trees[i].canopyWidth = randomFloat(4.5f, 8.0f);
+            world->trees[i].canopyHeight = randomFloat(12.0f, 19.0f);
             break;
         case TREE_TYPE_CIRCLE:
-            world->trees[i].width = game->display.pixelsPerUnit * randomFloat(0.5f, 1.2f);
-            world->trees[i].height = game->display.pixelsPerUnit * randomFloat(8.0f, 16.0f);
-            world->trees[i].canopyWidth = game->display.pixelsPerUnit * randomFloat(8.0f, 12.0f);
-            world->trees[i].canopyHeight = game->display.pixelsPerUnit * randomFloat(6.0f, 10.0f);
+            world->trees[i].width = randomFloat(0.5f, 1.2f);
+            world->trees[i].height = randomFloat(8.0f, 16.0f);
+            world->trees[i].canopyWidth = randomFloat(8.0f, 12.0f);
+            world->trees[i].canopyHeight = randomFloat(6.0f, 10.0f);
             break;
         default:
             break;
@@ -351,16 +330,15 @@ void GenerateTrees(Game *game)
 void GenerateClouds(Game *game)
 {
     World *world = &game->world;
-    WorldConfig params = game->config.world;
-    world->cloudsCount = params.cloudCount;
+    world->cloudsCount = game->config.world.cloudCount;
     world->clouds = (Cloud *)malloc(world->cloudsCount * sizeof(Cloud));
     float averageAngleBetweenClouds = 360.0f / world->cloudsCount;
 
     for (int i = 0; i < world->cloudsCount; i++)
     {
-        world->clouds[i].width = randomFloat(params.cloudWidth[0], params.cloudWidth[1]);
-        world->clouds[i].height = randomFloat(params.cloudHeight[0], params.cloudHeight[1]);
-        world->clouds[i].floatingHeight = randomFloat(params.cloudFloatingHeight[0], params.cloudFloatingHeight[1]);
+        world->clouds[i].width = randomFloat(5, 15);
+        world->clouds[i].height = randomFloat(2, 8);
+        world->clouds[i].floatingHeight = randomFloat(12, 25);
         world->clouds[i].atAngle = randomFloat(averageAngleBetweenClouds * i, averageAngleBetweenClouds * (i + 1));
         world->clouds[i].cloudType = rand() % 3; // Assuming 3 types of clouds
     }
@@ -382,6 +360,66 @@ void FreeGame(Game *game)
 
 #pragma endregion
 
+void ScreenResized(Game *game, int width, int height, float dpi, bool isLandscape, bool isFirstTime)
+{
+    game->display.cHeightUnits = 9;
+    game->display.cWidthUnits = 16;
+    game->display.width = width;
+    game->display.height = height;
+    game->display.dpi = dpi;
+
+    float ppy = height / (isLandscape ? game->display.cWidthUnits : game->display.cHeightUnits);
+    float ppx = width / (isLandscape ? game->display.cHeightUnits : game->display.cWidthUnits);
+    if (ppx < ppy)
+    {
+        game->display.pixelsPerUnit = ppx;
+    }
+    else
+    {
+        game->display.pixelsPerUnit = ppy;
+    }
+    game->display.lineThicknessFactor = game->display.pixelsPerUnit / 70.0f;
+    game->display.cwidth = game->display.pixelsPerUnit * (isLandscape ? game->display.cHeightUnits : game->display.cWidthUnits);
+    game->display.cheight = game->display.pixelsPerUnit * (isLandscape ? game->display.cWidthUnits : game->display.cHeightUnits);
+    game->display.floorRadiusUnits = (isLandscape ? game->display.cheight : game->display.cwidth) / (2 * sinf(game->config.camera.angleShowWhileMoving * DEG2RAD * 0.5f));
+    game->display.floorRadiusUnits /= game->display.pixelsPerUnit;
+
+    float chordLengthWhileMoving = game->display.pixelsPerUnit * 2 * game->display.floorRadiusUnits * sinf(DEG2RAD * (game->config.camera.angleShowWhileMoving / 2));
+    float chordLengthAtRest = game->display.pixelsPerUnit * 2 * game->display.floorRadiusUnits * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
+    game->display.zoomAtRest = (isLandscape ? game->display.cheight : game->display.cwidth) / chordLengthAtRest;
+    game->display.zoomWhileMoving = (isLandscape ? game->display.cheight : game->display.cwidth) / chordLengthWhileMoving;
+    game->display.zoomStart = game->display.zoomWhileMoving;
+    game->display.zoomEnd = game->display.zoomWhileMoving;
+    game->display.defaultRotation = isLandscape ? 90 : 0;
+    float overviewZoom = (isLandscape ? width : height) / (game->display.floorRadiusUnits * game->display.pixelsPerUnit * 3.2f);
+
+    game->display.playerCamera.offset = (Vector2) {width * game->config.camera.offset.x, height * game->config.camera.offset.y};
+    if (isLandscape)
+    {
+        game->display.playerCamera.offset = (Vector2){width * (1 - game->config.camera.offset.y), height * game->config.camera.offset.x};
+    }
+
+    if (isFirstTime) {
+        game->display.playerCamera.target = (Vector2){0, -game->display.floorRadiusUnits * game->display.pixelsPerUnit};
+        game->display.playerCamera.rotation = game->display.defaultRotation;
+        game->display.playerCamera.zoom = game->display.zoomWhileMoving;
+    } else {
+        game->display.playerCamera.zoom = game->player.state < PLAYER_STATE_MOVING_LEFT ? game->display.zoomAtRest : game->display.zoomWhileMoving;
+    }
+    
+    if (isFirstTime) {
+        
+    }
+    game->display.worldCamera.offset = (Vector2){width * 0.5f, height * 0.5f};
+    game->display.worldCamera.zoom = overviewZoom;
+
+    TraceLog(LOG_INFO, "Pixels per unit: %d", game->display.pixelsPerUnit);
+    TraceLog(LOG_INFO, "Radius in units: %f, actual: %f", game->display.floorRadiusUnits, game->display.floorRadiusUnits * game->display.pixelsPerUnit);
+    TraceLog(LOG_INFO, "Zoom at rest: %f, zoom while moving: %f", game->display.zoomAtRest, game->display.zoomWhileMoving);
+    TraceLog(LOG_INFO, "Overview zoom: %f", game->display.worldCamera.zoom);
+
+}
+
 void InitConfig(Game *game, int width, int height, float dpi, bool isLandscape)
 {
     // Camera
@@ -397,51 +435,14 @@ void InitConfig(Game *game, int width, int height, float dpi, bool isLandscape)
 
     // display
     {
-        game->display.cHeightUnits = 9;
-        game->display.cWidthUnits = 16;
-        game->display.width = width;
-        game->display.height = height;
-        game->display.dpi = dpi;
-
-        float ppy = height / (isLandscape ? game->display.cWidthUnits : game->display.cHeightUnits);
-        float ppx = width / (isLandscape ? game->display.cHeightUnits : game->display.cWidthUnits);
-        if (ppx < ppy)
-        {
-            game->display.pixelsPerUnit = ppx;
-        }
-        else
-        {
-            game->display.pixelsPerUnit = ppy;
-        }
-        game->display.pixelFactor = game->display.pixelsPerUnit / 70.0f;
-        TraceLog(LOG_INFO, "Pixels per unit: %d", game->display.pixelsPerUnit);
-        game->display.cwidth = game->display.pixelsPerUnit * (isLandscape ? game->display.cHeightUnits : game->display.cWidthUnits);
-        game->display.cheight = game->display.pixelsPerUnit * (isLandscape ? game->display.cWidthUnits : game->display.cHeightUnits);
+        ScreenResized(game, width, height, dpi, isLandscape, true);
     }
 
     // World
     {
-        game->config.world.floorRadius = ( isLandscape ? game->display.cheight: game->display.cwidth) / (2 * sinf(game->config.camera.angleShowWhileMoving * DEG2RAD * 0.5f));
-        TraceLog(LOG_INFO, "Floor radius %f", game->config.world.floorRadius);
-        game->config.world.rockHatchTileSize = game->display.pixelsPerUnit * 4;
-        game->config.world.rockHatchSeedOffset = game->display.pixelsPerUnit / 3;
-        game->config.world.rockHatchBorder = 50.0f / game->display.pixelsPerUnit;
-
         game->config.world.treeCount = 45;
-
         game->config.world.cloudCount = 30;
-
-        game->config.world.cloudWidth[0] = game->display.pixelsPerUnit * 5;
-        game->config.world.cloudWidth[1] = game->display.pixelsPerUnit * 15;
-        game->config.world.cloudHeight[0] = game->display.pixelsPerUnit * 2;
-        game->config.world.cloudHeight[1] = 2 * game->display.pixelsPerUnit * 4;
-
-        game->config.world.cloudFloatingHeight[0] = 12 * game->display.pixelsPerUnit;
-        game->config.world.cloudFloatingHeight[1] = 25 * game->display.pixelsPerUnit;
     }
-
-    game->config.player.width = game->display.pixelsPerUnit * 1.2f;
-    game->config.player.height = game->display.pixelsPerUnit * 2.4f;
 
     // Editor
     {
@@ -463,7 +464,7 @@ void InitGame(Game *game, int width, int height, float dpi, bool isLandscape)
 
     // Init ViewLines
     {
-        float floorRadius = game->config.world.floorRadius;
+        float floorRadius = game->display.floorRadiusUnits;
         game->world.viewlineCount = 360;
 
         game->world.earthViewlineStarts[0].x = 0;
@@ -472,14 +473,14 @@ void InitGame(Game *game, int width, int height, float dpi, bool isLandscape)
         for (int i = 0; i < game->world.viewlineCount; i++)
         {
             float angle = (360.0f / game->world.viewlineCount) * i * DEG2RAD;
-            game->world.earthViewlineStarts[i].x = (floorRadius - 15) * sinf(angle);
-            game->world.earthViewlineStarts[i].y = -(floorRadius - 15) * cosf(angle);
+            game->world.earthViewlineStarts[i].x = (floorRadius - 0.2f) * sinf(angle);
+            game->world.earthViewlineStarts[i].y = -(floorRadius - 0.2f) * cosf(angle);
 
-            game->world.skyViewlineStarts[i].x = (floorRadius + 15) * sinf(angle);
-            game->world.skyViewlineStarts[i].y = -(floorRadius + 15) * cosf(angle);
+            game->world.skyViewlineStarts[i].x = (floorRadius + 0.2f) * sinf(angle);
+            game->world.skyViewlineStarts[i].y = -(floorRadius + 0.2f) * cosf(angle);
 
-            game->world.skyViewlineEnds[i].x = (floorRadius + game->display.pixelsPerUnit * 35) * sinf(angle);
-            game->world.skyViewlineEnds[i].y = -(floorRadius + game->display.pixelsPerUnit * 35) * cosf(angle);
+            game->world.skyViewlineEnds[i].x = (floorRadius + 35) * sinf(angle);
+            game->world.skyViewlineEnds[i].y = -(floorRadius + 35) * cosf(angle);
         }
     }
 
@@ -489,48 +490,7 @@ void InitGame(Game *game, int width, int height, float dpi, bool isLandscape)
 
     // Init Camera
     {
-        float chordLengthWhileMoving = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowWhileMoving / 2));
-        float chordLengthAtRest = 2 * game->config.world.floorRadius * sinf(DEG2RAD * (game->config.camera.angleShowAtRest / 2));
-        game->world.floor.radius = game->config.world.floorRadius;
-        game->display.zoomAtRest = ( isLandscape ? game->display.cheight : game->display.cwidth) / chordLengthAtRest;
-        game->display.zoomWhileMoving = ( isLandscape ? game->display.cheight : game->display.cwidth) / chordLengthWhileMoving;
-        game->display.zoomStart = game->display.zoomWhileMoving;
-        game->display.zoomEnd = game->display.zoomWhileMoving;
-        game->display.defaultRotation = isLandscape ? 90 : 0;
-        float overviewZoom = ( isLandscape ? width : height) / (game->config.world.floorRadius * 3.2f);
-
-        game->display.playerCamera = (Camera2D){
-            .offset = {width * game->config.camera.offset.x, height * game->config.camera.offset.y},
-            .target = {0, -game->config.world.floorRadius},
-            .rotation = game->display.defaultRotation,
-            .zoom = game->display.zoomWhileMoving};
-        if (isLandscape)
-        {
-            game->display.playerCamera.offset = (Vector2){width * (1- game->config.camera.offset.y), height * game->config.camera.offset.x};
-        }
-
-        game->display.worldCamera = (Camera2D){
-            .offset = {width * 0.5f, height * 0.5f},
-            .target = (Vector2){0, 0},
-            .rotation = 0,
-            .zoom = overviewZoom};
-
-        game->display.playerCamera.zoom = game->display.zoomAtRest;
-        Vector2 worldBottomMiddleAtRest = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.playerCamera);
-        if (isLandscape) {
-            worldBottomMiddleAtRest = GetScreenToWorld2D((Vector2){0, height/2}, game->display.playerCamera);
-        }
-        game->world.floor.radiusSeenAtRest = -worldBottomMiddleAtRest.y;
-        game->display.playerCamera.zoom = game->display.zoomWhileMoving;
-        Vector2 worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){width / 2, height}, game->display.playerCamera);
-        if (isLandscape) {
-            worldBottomMiddleWhileMoving = GetScreenToWorld2D((Vector2){0, height/2}, game->display.playerCamera);
-        }
-        game->world.floor.radiusSeenWhileMoving = -worldBottomMiddleWhileMoving.y;
-        game->world.floor.gapSeenAtRest = game->world.floor.radius - game->world.floor.radiusSeenAtRest;
         game->display.cameraInUse = &game->display.playerCamera;
-
-        TraceLog(LOG_INFO, "Radius seen %f, %f, %f", game->world.floor.radius, game->world.floor.radiusSeenAtRest, game->world.floor.radius - game->world.floor.radiusSeenAtRest);
     }
 
     GenerateWorld(game);
@@ -543,12 +503,7 @@ char *wait = "Tap and Hold to OBSERVE";
 void UpdateDrawFrame(void)
 {
     float deltaTime = GetFrameTime();
-    if (IsKeyPressed(KEY_Z))
-    {
-        Vector2 worldCenterAt = GetWorldToScreen2D((Vector2){0, 0}, game.display.playerCamera);
-        Vector2 worldPointAt = GetWorldToScreen2D((Vector2){game.world.floor.radius, 0}, game.display.playerCamera);
-        TraceLog(LOG_INFO, "World Radius %f", Vector2Distance(worldPointAt, worldCenterAt));
-    }
+    
     if (IsKeyReleased(KEY_R))
     {
         GenerateWorld(&game);
@@ -690,8 +645,9 @@ void UpdateDrawFrame(void)
         }
     }
 
-    float floorRadius = config.world.floorRadius;
-
+    float pixelsPerUnit = game.display.pixelsPerUnit;
+    float floorRadius = game.display.floorRadiusUnits * pixelsPerUnit;
+    
     // Update Camera
     {
         float currentCameraToAngle = game.player.atAngle;
@@ -807,28 +763,28 @@ void UpdateDrawFrame(void)
                 game.display.cameraInUse = &game.display.playerCamera;
             }
         }
-        // DrawCircleSector((Vector2){game.display.width / 4, game.display.height / 4}, 50 * game.display.pixelFactor, 0, 360, 36, ORANGE);
+        // DrawCircleSector((Vector2){game.display.width / 4, game.display.height / 4}, 50 * game.display.lineThicknessFactor, 0, 360, 36, ORANGE);
         BeginMode2D(*game.display.cameraInUse);
 
-        float floorRadius = game.world.floor.radius;
+    
         float playerAngleInRad = game.player.atAngle * DEG2RAD;
-        float lineThickness = game.display.pixelFactor * 7;
+        float lineThickness = game.display.lineThicknessFactor * 7;
 
         // Draw Clouds
         for (int i = 0; i < game.world.cloudsCount; i++)
         {
             Cloud *clouds = game.world.clouds;
-            float radius = floorRadius + clouds[i].floatingHeight;
+            float radius = floorRadius + clouds[i].floatingHeight * pixelsPerUnit;
             float cloudX = radius * sinf(clouds[i].atAngle * DEG2RAD);
             float cloudY = -radius * cosf(clouds[i].atAngle * DEG2RAD);
 
             DrawRectanglePro(
-                (Rectangle){cloudX, cloudY, clouds[i].width, clouds[i].height},
-                (Vector2){clouds[i].width / 2, 0},
+                (Rectangle){cloudX, cloudY, clouds[i].width * pixelsPerUnit, clouds[i].height * pixelsPerUnit},
+                (Vector2){clouds[i].width * pixelsPerUnit / 2, 0},
                 (clouds[i].atAngle + 180),
                 LIGHTGRAY);
             DrawRectangleLinesPro(
-                (Rectangle){cloudX, cloudY, clouds[i].width, clouds[i].height},
+                (Rectangle){cloudX, cloudY, clouds[i].width * pixelsPerUnit, clouds[i].height * pixelsPerUnit},
                 (clouds[i].atAngle + 180),
                 BLACK, lineThickness);
         }
@@ -838,8 +794,8 @@ void UpdateDrawFrame(void)
         for (int i = 0; i < game.world.treesCount; i++)
         {
 
-            float treeWidth = trees[i].width;
-            float treeHeight = trees[i].height;
+            float treeWidth = trees[i].width * pixelsPerUnit;
+            float treeHeight = trees[i].height * pixelsPerUnit;
             float treeX = (floorRadius)*sinf(trees[i].atAngle * DEG2RAD);
             float treeY = -floorRadius * cosf(trees[i].atAngle * DEG2RAD);
             DrawRectanglePro(
@@ -854,18 +810,18 @@ void UpdateDrawFrame(void)
 
             float canopyX = (floorRadius + treeHeight) * sinf(trees[i].atAngle * DEG2RAD);
             float canopyY = -(floorRadius + treeHeight) * cosf(trees[i].atAngle * DEG2RAD);
-            float canopyWidth = trees[i].canopyWidth;
-            float canopyHeight = trees[i].canopyHeight;
+            float canopyWidth = trees[i].canopyWidth * pixelsPerUnit;
+            float canopyHeight = trees[i].canopyHeight * pixelsPerUnit;
             switch (trees[i].treeType)
             {
             case TREE_TYPE_RECT:
                 DrawRectanglePro(
-                    (Rectangle){canopyX, canopyY, trees[i].canopyWidth, trees[i].canopyHeight},
-                    (Vector2){trees[i].canopyWidth / 2, 0},
+                    (Rectangle){canopyX, canopyY, canopyWidth, canopyHeight},
+                    (Vector2){canopyWidth / 2, 0},
                     (trees[i].atAngle + 180),
                     trees[i].canopyColor);
                 DrawRectangleLinesPro(
-                    (Rectangle){canopyX, canopyY, trees[i].canopyWidth, trees[i].canopyHeight},
+                    (Rectangle){canopyX, canopyY, canopyWidth, canopyHeight},
                     (trees[i].atAngle + 180),
                     BLACK, lineThickness);
                 break;
@@ -896,13 +852,15 @@ void UpdateDrawFrame(void)
         Color floorColor = LIME;
         float radiusTill = floorRadius;
         float radiusFrom = floorRadius;
-        float floorBorderThickness = game.display.pixelFactor * 7.0f;
-        float floorSeperatorThickness = game.display.pixelFactor * 4.0f;
+        float floorBorderThickness = game.display.lineThicknessFactor * 7.0f;
+        float floorSeperatorThickness = game.display.lineThicknessFactor * 4.0f;
         // Draw Grass
         {
-            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill - game.display.pixelsPerUnit * 3.2f + 10 * game.display.pixelFactor, 0, 360, 360 / 2, BLACK, game.display.pixelsPerUnit * 4.45f);
+            DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill - game.display.pixelsPerUnit * 3.2f + 10 * game.display.lineThicknessFactor, 0, 360, 360 / 2, BLACK, game.display.pixelsPerUnit * 4.45f);
             DrawCircleSectorWithTeeth((Vector2){0, 0}, radiusTill - game.display.pixelsPerUnit * 3.2f, 0, 360, 360 / 2, floorColor, game.display.pixelsPerUnit * 4.45f);
         }
+        float playerWidth = 1.2f * pixelsPerUnit;
+        float playerHeight = 2.4f * pixelsPerUnit;
         // Draw House
         if (game.state != GAME_STATE_STOPPED)
         {
@@ -917,8 +875,8 @@ void UpdateDrawFrame(void)
             DrawLineEx((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, lineThickness, BLACK);
             DrawLineEx((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){0, -floorRadius - houseHeight - roofHeight}, lineThickness, BLACK);
             DrawLineEx((Vector2){0, -floorRadius - houseHeight - roofHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, lineThickness, BLACK);
-            DrawRectangle(-game.config.player.width / 2, -floorRadius - game.config.player.height, game.config.player.width, game.config.player.height, BEIGE);
-            DrawRectangleLinesPro((Rectangle){0, -floorRadius - game.config.player.height, game.config.player.width, game.config.player.height}, 0, BLACK, 5 * game.display.pixelFactor);
+            DrawRectangle(-playerWidth / 2, -floorRadius - playerHeight, playerWidth, playerHeight, BEIGE);
+            DrawRectangleLinesPro((Rectangle){0, -floorRadius - playerHeight, playerWidth, playerHeight}, 0, BLACK, 5 * game.display.lineThicknessFactor);
         }
 
         // Draw Instructions
@@ -928,14 +886,14 @@ void UpdateDrawFrame(void)
             if (game.world.allVisited)
             {
 
-                DrawText(stop, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.pixelFactor, instructionColor);
+                DrawText(stop, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.lineThicknessFactor, instructionColor);
             }
             else
             {
-                DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.pixelFactor, instructionColor);
+                DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.lineThicknessFactor, instructionColor);
             }
-            DrawText("Tap to FLIP", round(-game.display.pixelsPerUnit * 8), round(-floorRadius * 1.2f), 160 * game.display.pixelFactor, instructionColor);
-            DrawText(wait, round(-game.display.pixelsPerUnit * 16), round(-floorRadius * 1.3f), 180 * game.display.pixelFactor, instructionColor);
+            DrawText("Tap to FLIP", round(-game.display.pixelsPerUnit * 8), round(-floorRadius * 1.2f), 160 * game.display.lineThicknessFactor, instructionColor);
+            DrawText(wait, round(-game.display.pixelsPerUnit * 16), round(-floorRadius * 1.3f), 180 * game.display.lineThicknessFactor, instructionColor);
         }
 
         // Draw floor border
@@ -944,10 +902,10 @@ void UpdateDrawFrame(void)
         if (game.state == GAME_STATE_PLAYING && game.display.cameraInUse == &game.display.playerCamera)
         {
 
-            float wheelRadius = game.config.player.width * 0.55f;
+            float wheelRadius = playerWidth * 0.55f;
 
-            float bodyWidth = game.config.player.width * 0.3f;
-            float bodyHeight = game.config.player.height * 0.4f;
+            float bodyWidth = playerWidth * 0.3f;
+            float bodyHeight = playerHeight * 0.4f;
             float headRadius = bodyWidth * 0.7f;
             float factor = game.player.state == PLAYER_STATE_MOVING_RIGHT || game.player.state == PLAYER_STATE_IDLE_RIGHT ? 1.0f : -1.0f;
             // head
@@ -974,9 +932,9 @@ void UpdateDrawFrame(void)
                 (270 * factor + 30 * factor + game.player.atAngle),
                 BLACK);
 
-            DrawRing((Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad)}, wheelRadius - 10 * game.display.pixelFactor, wheelRadius, 0, 360, 60, BLACK);
-            DrawCircle((floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad), wheelRadius - 8 * game.display.pixelFactor, GRAY);
-            float spokeThickness = 3 * game.display.pixelFactor;
+            DrawRing((Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad)}, wheelRadius - 10 * game.display.lineThicknessFactor, wheelRadius, 0, 360, 60, BLACK);
+            DrawCircle((floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad), wheelRadius - 8 * game.display.lineThicknessFactor, GRAY);
+            float spokeThickness = 3 * game.display.lineThicknessFactor;
             float spokeCount = 3;
             for (int i = 0; i < spokeCount; i++)
             {
@@ -1074,39 +1032,39 @@ void UpdateDrawFrame(void)
                 }
 
                 // For rays on earth bottom screen is enough
-                if (CheckCollisionLines(bottomLeft, bottomRight, game.world.earthViewlineStarts[i], (Vector2){0, 0}, &collisionPoint))
+                if (CheckCollisionLines(bottomLeft, bottomRight, Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit), (Vector2){0, 0}, &collisionPoint))
                 {
-                    if (Vector2LengthSqr(collisionPoint) < Vector2LengthSqr(game.world.earthViewlineStarts[i]))
+                    if (Vector2LengthSqr(collisionPoint) < Vector2LengthSqr(Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit)))
                     {
-                        game.world.earthViewlineStarts[i] = collisionPoint;
+                        game.world.earthViewlineStarts[i] = Vector2Scale(collisionPoint, 1.0f / pixelsPerUnit);
                         game.world.visted[i] = true;
                     }
                 }
 
                 // For rays on sky check top screen
-                if (CheckCollisionLines(topLeft, topRight, game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], &collisionPoint))
+                if (CheckCollisionLines(topLeft, topRight, Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit), Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit), &collisionPoint))
                 {
-                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.skyViewlineStarts[i]))
+                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit)))
                     {
-                        game.world.skyViewlineStarts[i] = collisionPoint;
+                        game.world.skyViewlineStarts[i] = Vector2Scale(collisionPoint, 1.0f / pixelsPerUnit);
                     }
                 }
 
                 // For rays on sky check left screen
-                if (CheckCollisionLines(bottomLeft, topLeft, game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], &collisionPoint))
+                if (CheckCollisionLines(bottomLeft, topLeft, Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit), Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit), &collisionPoint))
                 {
-                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.skyViewlineStarts[i]))
+                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit)))
                     {
-                        game.world.skyViewlineStarts[i] = collisionPoint;
+                        game.world.skyViewlineStarts[i] = Vector2Scale(collisionPoint, 1.0f / pixelsPerUnit);
                     }
                 }
 
                 // For rays on sky check right screen
-                if (CheckCollisionLines(bottomRight, topRight, game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], &collisionPoint))
+                if (CheckCollisionLines(bottomRight, topRight, Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit), Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit), &collisionPoint))
                 {
-                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(game.world.skyViewlineStarts[i]))
+                    if (Vector2LengthSqr(collisionPoint) > Vector2LengthSqr(Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit)))
                     {
-                        game.world.skyViewlineStarts[i] = collisionPoint;
+                        game.world.skyViewlineStarts[i] = Vector2Scale(collisionPoint, 1.0f / pixelsPerUnit);
                     }
                 }
 
@@ -1131,8 +1089,8 @@ void UpdateDrawFrame(void)
         {
             for (int i = game.world.viewlineCount - 1; i >= 0; i -= 1)
             {
-                // DrawLineV((Vector2){0, 0}, game.world.earthViewlineStarts[i], GREEN);
-                DrawLineV(game.world.skyViewlineStarts[i], game.world.skyViewlineEnds[i], RED);
+                DrawLineV((Vector2){0, 0}, Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit), GREEN);
+                DrawLineV(Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit), Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit), RED);
             }
         }
 
@@ -1140,30 +1098,30 @@ void UpdateDrawFrame(void)
         {
             DrawTriangle(
                 (Vector2){0, 0},
-                game.world.earthViewlineStarts[i],
-                game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1],
+                Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit),
+                Vector2Scale(game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
                 ColorAlpha(GRAY, 0.95f));
 
             DrawTriangle(
-                game.world.skyViewlineEnds[i],
-                game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1],
-                game.world.skyViewlineStarts[i],
+                Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit),
+                Vector2Scale(game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
+                Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit),
                 ColorAlpha(SKYBLUE, 0.9f));
             DrawTriangle(
-                game.world.skyViewlineEnds[i],
-                game.world.skyViewlineEnds[(i == 0) ? game.world.viewlineCount - 1 : i - 1],
-                game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1],
+                Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit),
+                Vector2Scale(game.world.skyViewlineEnds[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
+                Vector2Scale(game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
                 ColorAlpha(SKYBLUE, 0.9f));
             if (game.state == GAME_STATE_STOPPED)
             {
-                DrawLineEx(game.world.earthViewlineStarts[i], game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], 30 * game.display.pixelFactor, BLACK);
-                DrawLineEx(game.world.skyViewlineStarts[i], game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], 30 * game.display.pixelFactor, BLACK);
+                DrawLineEx(Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit), Vector2Scale(game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit), 30 * game.display.lineThicknessFactor, BLACK);
+                DrawLineEx(Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit), Vector2Scale(game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit), 30 * game.display.lineThicknessFactor, BLACK);
             }
         }
 
         EndMode2D();
 
-        DrawText(TextFormat("FPS %d", GetFPS()), game.display.width / 2 - game.display.cwidth / 2 + game.display.cwidth - 500, 10, 20 * game.display.pixelFactor, BLACK);
+        DrawText(TextFormat("FPS %d", GetFPS()), game.display.width / 2 - game.display.cwidth / 2 + game.display.cwidth - 500, 10, 20 * game.display.lineThicknessFactor, BLACK);
         DrawRectangle(0, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
         DrawRectangle(game.display.width - (game.display.width - game.display.cwidth) / 2, 0, (game.display.width - game.display.cwidth) / 2, game.display.height, BLACK);
 
