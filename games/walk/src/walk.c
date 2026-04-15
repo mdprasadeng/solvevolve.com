@@ -502,6 +502,15 @@ char *wait = "Tap and Hold to OBSERVE";
 
 void UpdateDrawFrame(void)
 {
+    if (IsWindowResized())
+    {
+        int width = GetScreenWidth();
+        int height = GetScreenHeight();
+        float dpi = game.display.dpi;
+        bool isLandscape = height > width;
+        ScreenResized(&game, width, height, dpi, isLandscape, false);
+    }
+
     float deltaTime = GetFrameTime();
     
     if (IsKeyReleased(KEY_R))
@@ -899,7 +908,7 @@ void UpdateDrawFrame(void)
         // Draw floor border
         DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorBorderThickness, 0, 360, 360, BLACK);
         // Draw Player
-        if (game.state == GAME_STATE_PLAYING && game.display.cameraInUse == &game.display.playerCamera)
+        if (game.state == GAME_STATE_PLAYING)
         {
 
             float wheelRadius = playerWidth * 0.55f;
