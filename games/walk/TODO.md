@@ -5,7 +5,6 @@
 #Tomorrow
 * check performance with 
 * render only in vicinity
-* 
 * stick man walking
 * world view
     * draw footsteps
@@ -15,6 +14,12 @@
 * interacting things
 * abstraction for interacting things position
 
+
+const canvas = document.getElementById('canvas');
+const link = document.createElement('a');
+link.download = 'my-image.png';
+link.href = canvas.toDataURL('image/png');
+link.click();
 
 #In Future
 * 

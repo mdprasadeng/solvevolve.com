@@ -263,6 +263,7 @@ Game game;
 void InitGame(Game *game, int width, int height, float dpi, bool isLandscape);
 void FreeGame(Game *game);
 void UpdateDrawFrame(void);
+
 #pragma endregion
 
 int main(void)
@@ -1379,6 +1380,14 @@ void UpdateDrawFrame(void)
 
 #ifdef PLATFORM_DESKTOP
         rlImGuiEnd(); // ends the ImGui content mode. Make all ImGui calls before this
+#endif
+
+        if (IsKeyPressed(KEY_S)) {
+            char *name = "walk.png";
+            TakeScreenshot(name);
+#ifdef PLATFORM_WEB
+            emscripten_run_script(TextFormat("downloadFileFromVFS('%s');", name));
+        }
 #endif
 
         EndDrawing();
