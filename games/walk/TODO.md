@@ -1,6 +1,8 @@
 #Today
-* prepare for level editor
 * take screenshot
+* support share option
+* prepare for level editor
+
 
 #Tomorrow
 * check performance with 

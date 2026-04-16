@@ -12,7 +12,80 @@
 
 #if defined(PLATFORM_WEB)
 #include <emscripten/emscripten.h>
+
+// This defines the function 'share_image_js' which maps to JavaScript
+EM_JS(void, EM_JS_ShareImage, (const char* fileName), {
+  (async () => {
+    try {
+      // Convert C string to JS string
+      const name = UTF8ToString(fileName);
+      
+      // Read from Emscripten Virtual File System
+      const data = FS.readFile(name);
+      
+      // Create the File object
+      const file = new File([data], name, { type: 'image/png' });
+      const shareData = {
+        files: [file],
+        title: 'Image Share',
+        text: 'Shared from Emscripten'
+      };
+
+      // Check for browser support and share
+      if (navigator.canShare && navigator.canShare(shareData)) {
+        await navigator.share(shareData);
+      } else {
+        console.error("Web Share not supported on this browser.");
+      }
+    } catch (err) {
+      // This will catch the error if the 'user gesture' (key press) has expired
+      console.error("Share failed:", err);
+    }
+  })(); 
+});
+
+// Define the function using EM_JS
+EM_JS(void, EM_JS_DownloadImage, (const char* fileName), {
+  try {
+    // 1. Convert C string to JS string
+    const name = UTF8ToString(fileName);
+
+    // 2. Read from Emscripten Virtual File System
+    const data = FS.readFile(name);
+
+    // 3. Create blob and download link
+    const blob = new Blob([data], { type: 'image/png' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = url;
+    link.download = name;
+    
+    // 4. Trigger download
+    document.body.appendChild(link);
+    link.click();
+
+    // 5. Cleanup
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    
+    console.log("Download triggered for:", name);
+  } catch (e) {
+    console.error("Failed to download file from VFS:", e);
+  }
+});
+
+EM_JS(bool, EM_JS_ShareSupported, (), {
+    return !!navigator.canShare
+});
+
+
 #else
+
+bool EM_JS_ShareSupported() {
+    return false;
+}
+
 #include "rlImGui.h" // include the API header
 #include "dcimgui.h"
 #endif
@@ -153,6 +226,7 @@ typedef enum
 
 typedef struct Display
 {
+    bool isLandscape;
     int width;
     int height;
     int cwidth;  // corrected width
@@ -263,6 +337,7 @@ Game game;
 void InitGame(Game *game, int width, int height, float dpi, bool isLandscape);
 void FreeGame(Game *game);
 void UpdateDrawFrame(void);
+void TriggerSharePhoto();
 
 #pragma endregion
 
@@ -473,6 +548,7 @@ void FreeGame(Game *game)
 
 void ScreenResized(Game *game, int width, int height, float dpi, bool isLandscape, bool isFirstTime)
 {
+    game->display.isLandscape = isLandscape;
     game->display.cHeightUnits = 9;
     game->display.cWidthUnits = 16;
     game->display.width = width;
@@ -502,7 +578,7 @@ void ScreenResized(Game *game, int width, int height, float dpi, bool isLandscap
     game->display.zoomStart = game->display.zoomWhileMoving;
     game->display.zoomEnd = game->display.zoomWhileMoving;
     game->display.defaultRotation = isLandscape ? 90 : 0;
-    float overviewZoom = (isLandscape ? width : height) / (game->display.floorRadiusUnits * game->display.pixelsPerUnit * 3.2f);
+    float overviewZoom = (isLandscape ? game->display.cwidth : game->display.cheight) / (game->display.floorRadiusUnits * game->display.pixelsPerUnit * 3.2f);
 
     game->display.playerCamera.offset = (Vector2){width * game->config.camera.offset.x, height * game->config.camera.offset.y};
     if (isLandscape)
@@ -525,6 +601,7 @@ void ScreenResized(Game *game, int width, int height, float dpi, bool isLandscap
     {
     }
     game->display.worldCamera.offset = (Vector2){width * 0.5f, height * 0.5f};
+    game->display.worldCamera.rotation = game->display.defaultRotation;
     game->display.worldCamera.zoom = overviewZoom;
 
     TraceLog(LOG_INFO, "Pixels per unit: %d", game->display.pixelsPerUnit);
@@ -1382,14 +1459,45 @@ void UpdateDrawFrame(void)
         rlImGuiEnd(); // ends the ImGui content mode. Make all ImGui calls before this
 #endif
 
-        if (IsKeyPressed(KEY_S)) {
-            char *name = "walk.png";
-            TakeScreenshot(name);
-#ifdef PLATFORM_WEB
-            emscripten_run_script(TextFormat("downloadFileFromVFS('%s');", name));
+        if (IsKeyPressed(KEY_S))
+        {
+            TriggerSharePhoto();
         }
-#endif
-
         EndDrawing();
     }
+}
+
+void TriggerSharePhoto()
+{
+    char *name = "walk.png";
+    Image share = LoadImageFromScreen();
+    if (game.display.isLandscape)
+    {
+        ImageCrop(&share, (Rectangle){
+                              (game.display.width - game.display.cwidth) / 2, 
+                              (game.display.height - game.display.cheight) / 2 + (game.display.cheight - game.display.cwidth) / 2,
+                              game.display.cwidth, 
+                              game.display.cwidth});
+        ImageRotateCCW(&share);
+    }
+    else
+    {
+        ImageCrop(&share, (Rectangle){
+                              (game.display.width - game.display.cwidth) / 2 + (game.display.cwidth - game.display.cheight) / 2, 
+                              (game.display.height - game.display.cheight) / 2,
+                              game.display.cheight, 
+                              game.display.cheight});
+    }
+
+    ExportImage(share, name);
+
+#ifdef PLATFORM_WEB
+    if (EM_JS_ShareSupported()) {
+        EM_JS_ShareImage(name);
+    } else {
+        EM_JS_DownloadImage(name);
+    }
+    
+
+#endif
 }

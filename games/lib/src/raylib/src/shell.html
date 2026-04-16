@@ -209,31 +209,6 @@ jwE50AGjLCVuS8Yt4H7OgZLKK5EKOsLviEWJSL/+0uMi7gLUSBseYwqEbXvSHCec1CJvZPyHCmYQffaB
       border-color: black;
     }
   </style>
-
-  <script type="text/javascript">
-    function downloadFileFromVFS(fileName) {
-      try {
-        // Read the file from the Emscripten virtual filesystem
-        const data = FS.readFile(fileName);
-
-        // Create a blob and a temporary download link
-        const blob = new Blob([data], { type: 'image/png' });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-
-        // Cleanup
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-      } catch (e) {
-        console.error("Failed to download file from VFS:", e);
-      }
-    }
-  </script>
 </head>
 
 <body>
