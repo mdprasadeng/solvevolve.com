@@ -1,8 +1,9 @@
 #Today
-* bug with view lines taking whole screen instead of the part
 * itegrate share into game end flow
     * add button for share or download
 * prepare for level editor
+* bush grass support via drawable
+
 
 
 #Tomorrow
