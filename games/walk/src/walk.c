@@ -24,7 +24,9 @@ EM_JS(void, EM_JS_ShareImage, (const char* fileName), {
       const data = FS.readFile(name);
       
       // Create the File object
-      const file = new File([data], name, { type: 'image/png' });
+      const file = new File([data], name, {
+    type:
+        'image/png' });
       const shareData = {
         files: [file],
         title: 'Image Share',
@@ -38,10 +40,10 @@ EM_JS(void, EM_JS_ShareImage, (const char* fileName), {
         console.error("Web Share not supported on this browser.");
       }
     } catch (err) {
-      // This will catch the error if the 'user gesture' (key press) has expired
-      console.error("Share failed:", err);
+    // This will catch the error if the 'user gesture' (key press) has expired
+    console.error("Share failed:", err);
     }
-  })(); 
+})();
 });
 
 // Define the function using EM_JS
@@ -54,7 +56,9 @@ EM_JS(void, EM_JS_DownloadImage, (const char* fileName), {
     const data = FS.readFile(name);
 
     // 3. Create blob and download link
-    const blob = new Blob([data], { type: 'image/png' });
+    const blob = new Blob([data], {
+type:
+    'image/png' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
 
@@ -70,19 +74,19 @@ EM_JS(void, EM_JS_DownloadImage, (const char* fileName), {
     window.URL.revokeObjectURL(url);
     
     console.log("Download triggered for:", name);
-  } catch (e) {
+}
+catch(e)
+{
     console.error("Failed to download file from VFS:", e);
-  }
+}
 });
 
-EM_JS(bool, EM_JS_ShareSupported, (), {
-    return !!navigator.canShare
-});
-
+EM_JS(bool, EM_JS_ShareSupported, (), {return !!navigator.canShare});
 
 #else
 
-bool EM_JS_ShareSupported() {
+bool EM_JS_ShareSupported()
+{
     return false;
 }
 
@@ -93,6 +97,7 @@ bool EM_JS_ShareSupported() {
 #pragma endregion
 
 #pragma region World-Data
+
 typedef enum PlayerState
 {
     PLAYER_STATE_IDLE_LEFT = 0,
@@ -231,6 +236,8 @@ typedef struct Display
     int height;
     int cwidth;  // corrected width
     int cheight; // corrected height
+    int cwidthOffset;
+    int cheightOffset;
     int cWidthUnits;
     int cHeightUnits;
     int pixelsPerUnit;
@@ -321,8 +328,38 @@ typedef enum GameState
     GAME_STATE_STOPPED
 } GameState;
 
+typedef enum DrawableType
+{
+    DRAW_CIRCLE = 0,
+    DRAW_TRIANGLE, // Only Isosceles supported
+    DRAW_RECTANGLE,
+    DRAW_POLY_5,
+    DRAW_POLY_6,
+    DRAW_POLY_7,
+    DRAW_POLY_8,
+    DRAW_CLOVER,
+    DRAW_GEAR,
+} DrawableType;
+
+typedef struct Drawable
+{
+    DrawableType type;
+    Vector2 dimensions;
+    Vector2 metadata;
+    Color color;
+} Drawable;
+
+typedef struct RadialDrawable
+{
+    float atRadiusOffset;
+    float atAngle;
+    Drawable drawable;
+} RadialDrawable;
+
 typedef struct Game
 {
+    RadialDrawable drawables[1000];
+    int drawableCount;
     GameState state;
     Config config;
     World world;
@@ -331,7 +368,163 @@ typedef struct Game
     Controls controls;
 } Game;
 
-Game game;
+Game game = {0};
+
+void BeginRadialDraw(float atRadius, float atAngle)
+{
+    rlPushMatrix();
+    rlTranslatef(atRadius * sinf(atAngle * DEG2RAD), -atRadius * cosf(atAngle * DEG2RAD), 0);
+    rlRotatef(atAngle, 0, 0, 1);
+}
+
+void EndRadialDraw()
+{
+    rlPopMatrix();
+}
+
+float AngleByLine(Vector2 center, Vector2 point) {
+    float angle = atan2f(point.y - center.y, point.x - center.x) * RAD2DEG;
+    return angle < 0 ? 360 + angle : angle; 
+    
+}
+
+void RadialDraw(RadialDrawable data)
+{
+
+    float atRadius = (game.display.floorRadiusUnits + data.atRadiusOffset) * game.display.pixelsPerUnit;
+    float scale = game.display.pixelsPerUnit;
+    float lineThickness = 7 * game.display.lineThicknessFactor;
+    Color lineColor = BLACK;
+
+    rlPushMatrix();
+    rlTranslatef(atRadius * sinf(data.atAngle * DEG2RAD), -atRadius * cosf(data.atAngle * DEG2RAD), 0);
+    rlRotatef(data.atAngle, 0, 0, 1);
+
+    Drawable obj = data.drawable;
+
+    switch (obj.type)
+    {
+    case DRAW_CLOVER:
+    {
+
+        Color color = obj.color;
+        Vector2 center = {0};
+        float radiusH = obj.dimensions.x * scale;
+        float radiusV = obj.dimensions.y * scale;
+
+        int angles[] = {180, 210, 250 - 3, 290 + 3, 330, 360};
+        Vector2 points[6] = {0};
+        for (int i = 0; i < 6; i++)
+        {
+            points[i].x = center.x + cosf(DEG2RAD * angles[i]) * radiusH;
+            points[i].y = center.y + sinf(DEG2RAD * angles[i]) * radiusV;
+        }
+
+        for (int i = 0; i < 5; i++)
+        {
+            Vector2 pointA = points[i];
+            Vector2 pointB = points[i + 1];
+            float chordLength = Vector2Distance(pointA, pointB);
+            Vector2 normal = Vector2Normalize(Vector2Rotate(Vector2Subtract(pointB, pointA), 90 * DEG2RAD));
+            
+            Vector2 pointCenter = Vector2Scale(Vector2Add(pointA, pointB), 0.5f);
+            pointCenter = Vector2Add(pointCenter, Vector2Scale(normal, chordLength * 0.2f));
+
+            float cloverRadius = Vector2Distance(pointCenter, pointA);
+            
+            float fromAngle = AngleByLine(pointCenter, pointA);
+            
+            float toAngle = AngleByLine(pointCenter, pointB);
+            if (toAngle < fromAngle) {
+                toAngle += 360;
+            }
+            
+
+            DrawCircleSector(pointCenter, cloverRadius,fromAngle, toAngle, 10, obj.color);
+            DrawRing(pointCenter, cloverRadius-lineThickness, cloverRadius, fromAngle, toAngle, 10, BLACK);
+        }
+        DrawLineEx(points[0], points[5], lineThickness, BLACK);
+
+        
+        rlBegin(RL_TRIANGLES);
+        for (int i = 0; i < 5; i++)
+        {
+            Vector2 pointA = points[i];
+            Vector2 pointB = points[i + 1];
+
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlVertex2f(center.x, center.y);
+            rlVertex2f(pointB.x, pointB.y);
+            rlVertex2f(pointA.x, pointA.y);
+        }
+        rlEnd();
+
+       
+
+        break;
+    }
+    case DRAW_CIRCLE:
+    {
+        DrawCircle(0, -obj.dimensions.x * scale * 0.5f, obj.dimensions.x * scale * 0.5f, obj.color);
+        DrawRing((Vector2){0, -obj.dimensions.x * scale * 0.5f}, obj.dimensions.x * scale * 0.5f - lineThickness, obj.dimensions.x * scale, 0, 360, 36, lineColor);
+        break;
+    }
+
+    case DRAW_TRIANGLE:
+    {
+        Vector2 left = {.x = -obj.dimensions.x * scale * 0.5f, .y = 0};
+        Vector2 right = {.x = obj.dimensions.x * scale * 0.5f, .y = 0};
+        Vector2 top = {.x = 0, .y = -obj.dimensions.y * scale};
+
+        DrawTriangle(left, right, top, obj.color);
+        DrawLineEx(left, right, lineThickness, lineColor);
+        DrawLineEx(right, top, lineThickness, lineColor);
+        DrawLineEx(top, left, lineThickness, lineColor);
+        break;
+    }
+
+    case DRAW_RECTANGLE:
+    {
+        Rectangle rect = {
+            .x = -obj.dimensions.x * scale * 0.5f,
+            .y = -obj.dimensions.y * scale,
+            .width = obj.dimensions.x * scale,
+            .height = obj.dimensions.y * scale};
+
+        DrawRectangleRec(rect, obj.color);
+        DrawRectangleLinesEx(rect, lineThickness, lineColor);
+        break;
+    }
+    case DRAW_POLY_5:
+    {
+        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 5, obj.dimensions.x * scale, 0, BLACK);
+        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 5, obj.dimensions.x * scale - lineThickness, 0, obj.color);
+        break;
+    }
+    case DRAW_POLY_6:
+    {
+        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 6, obj.dimensions.x * scale, 0, BLACK);
+        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 6, obj.dimensions.x * scale - lineThickness, 0, obj.color);
+        break;
+    }
+    case DRAW_POLY_7:
+    {
+        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 7, obj.dimensions.x * scale, 0, BLACK);
+        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 7, obj.dimensions.x * scale - lineThickness, 0, obj.color);
+        break;
+    }
+    case DRAW_POLY_8:
+    {
+        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 8, obj.dimensions.x * scale, 0, BLACK);
+        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 8, obj.dimensions.x * scale - lineThickness, 0, obj.color);
+        break;
+    }
+    default:
+        break;
+    }
+
+    rlPopMatrix();
+}
 
 #pragma region func definitions
 void InitGame(Game *game, int width, int height, float dpi, bool isLandscape);
@@ -403,61 +596,77 @@ int GetRandomInt(int count, int options[])
 
 void GenerateTrees(Game *game)
 {
-    World *world = &game->world;
-    WorldConfig params = game->config.world;
-    world->treeCount = params.treeCount;
-    world->trees = (Tree *)malloc(world->treeCount * sizeof(Tree));
-    float averageAngleBetweenTrees = 360.0f / world->treeCount;
+
+    float averageAngleBetweenTrees = 360.0f / game->config.world.treeCount;
     float angleOffset = averageAngleBetweenTrees * 0.1f;
-    for (int i = 0; i < world->treeCount; i++)
+
+    int drawableOffset = game->drawableCount;
+    game->drawableCount += game->config.world.treeCount * 2;
+
+    Color trunkColors[] = {BROWN, BROWN, DARKBROWN, DARKBROWN, DARKBROWN};
+    Color canopyColors[] = {GREEN, LIME, LIME, LIME, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN};
+    int canopyTypes[] = {DRAW_CLOVER, DRAW_CLOVER, DRAW_RECTANGLE, DRAW_RECTANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE};
+
+    for (int i = 0; i < game->config.world.treeCount; i++)
     {
-        world->trees[i].atAngle = randomFloat(averageAngleBetweenTrees * i + angleOffset, averageAngleBetweenTrees * (i + 1) - angleOffset);
-        world->trees[i].treeType = rand() % 3; // Assuming 3 types of trees
-        switch (world->trees[i].treeType)
+        DrawableType canopyType = GetRandomInt(7, canopyTypes);
+
+        RadialDrawable tree = {0};
+        RadialDrawable canopy = {0};
+        switch (canopyType)
         {
-        case TREE_TYPE_RECT:
-            world->trees[i].width = randomFloat(0.5f, 2.3f);
-            world->trees[i].height = randomFloat(3.5f, 13.5f);
-            world->trees[i].canopyWidth = randomFloat(12.0f, 18.0f);
-            world->trees[i].canopyHeight = randomFloat(6.0f, 12.0f);
+        case DRAW_RECTANGLE:
+            tree.drawable.dimensions.x = randomFloat(0.5f, 2.3f);
+            tree.drawable.dimensions.y = randomFloat(3.5f, 13.5f);
+            canopy.drawable.dimensions.x = randomFloat(12.0f, 18.0f);
+            canopy.drawable.dimensions.y = randomFloat(6.0f, 12.0f);
             break;
-        case TREE_TYPE_TRIANGLE:
-            world->trees[i].width = randomFloat(0.8f, 1.8f);
-            world->trees[i].height = randomFloat(2.5f, 9.7f);
-            world->trees[i].canopyWidth = randomFloat(4.5f, 8.0f);
-            world->trees[i].canopyHeight = randomFloat(12.0f, 19.0f);
+        case DRAW_TRIANGLE:
+            tree.drawable.dimensions.x = randomFloat(0.8f, 1.8f);
+            tree.drawable.dimensions.y = randomFloat(2.5f, 9.7f);
+            canopy.drawable.dimensions.x = randomFloat(4.5f, 8.0f);
+            canopy.drawable.dimensions.y = randomFloat(12.0f, 19.0f);
             break;
-        case TREE_TYPE_CIRCLE:
-            world->trees[i].width = randomFloat(0.5f, 1.2f);
-            world->trees[i].height = randomFloat(8.0f, 16.0f);
-            world->trees[i].canopyWidth = randomFloat(8.0f, 12.0f);
-            world->trees[i].canopyHeight = randomFloat(6.0f, 10.0f);
+        case DRAW_CIRCLE:
+        case DRAW_CLOVER:
+            tree.drawable.dimensions.x = randomFloat(0.5f, 1.2f);
+            tree.drawable.dimensions.y = randomFloat(8.0f, 16.0f);
+            canopy.drawable.dimensions.x = randomFloat(8.0f, 12.0f);
+            canopy.drawable.dimensions.y = randomFloat(6.0f, 10.0f);
             break;
         default:
             break;
         }
-        Color trunkColors[] = {BROWN, BROWN, DARKBROWN, DARKBROWN, DARKBROWN};
-        world->trees[i].trunkColor = GetRandomColor(5, trunkColors);
+        tree.atAngle = randomFloat(averageAngleBetweenTrees * i + angleOffset, averageAngleBetweenTrees * (i + 1) - angleOffset);
+        tree.atRadiusOffset = 0;
+        tree.drawable.type = DRAW_RECTANGLE;
+        tree.drawable.color = GetRandomColor(5, trunkColors);
 
-        Color canopyColors[] = {GREEN, LIME, LIME, LIME, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN};
-        world->trees[i].canopyColor = GetRandomColor(10, canopyColors);
+        canopy.drawable.type = canopyType;
+        canopy.drawable.color = GetRandomColor(10, canopyColors);
+        canopy.atAngle = tree.atAngle;
+        canopy.atRadiusOffset = tree.drawable.dimensions.y;
+
+        game->drawables[drawableOffset + i * 2] = tree;
+        game->drawables[drawableOffset + i * 2 + 1] = canopy;
     }
 }
 
 void GenerateClouds(Game *game)
 {
-    World *world = &game->world;
-    world->cloudCount = game->config.world.cloudCount;
-    world->clouds = (Cloud *)malloc(world->cloudCount * sizeof(Cloud));
-    float averageAngleBetweenClouds = 360.0f / world->cloudCount;
+    float averageAngleBetween = 360.0f / game->config.world.cloudCount;
 
-    for (int i = 0; i < world->cloudCount; i++)
+    int drawableCount = game->drawableCount;
+    game->drawableCount += game->config.world.cloudCount;
+    for (int i = 0; i < game->config.world.cloudCount; i++)
     {
-        world->clouds[i].width = randomFloat(5, 15);
-        world->clouds[i].height = randomFloat(2, 8);
-        world->clouds[i].floatingHeight = randomFloat(12, 25);
-        world->clouds[i].atAngle = randomFloat(averageAngleBetweenClouds * i, averageAngleBetweenClouds * (i + 1));
-        world->clouds[i].cloudType = rand() % 3; // Assuming 3 types of clouds
+        game->drawables[drawableCount + i] = (RadialDrawable){
+            .atAngle = randomFloat(averageAngleBetween * i, averageAngleBetween * (i + 1)),
+            .atRadiusOffset = randomFloat(12, 25),
+            .drawable = {
+                .type = DRAW_RECTANGLE,
+                .color = LIGHTGRAY,
+                .dimensions = {.x = randomFloat(5, 15), .y = randomFloat(2, 8)}}};
     }
 }
 
@@ -497,17 +706,19 @@ void GenerateBushes(Game *game)
 
 void GenerateStones(Game *game)
 {
-    World *world = &game->world;
-    world->stoneCount = game->config.world.stoneCount;
-    world->stones = (Stone *)malloc(world->stoneCount * sizeof(Stone));
-    float averageAngleBetweenStones = 360.0f / world->stoneCount;
+    float averageAngleBetweenStones = 360.0f / game->config.world.stoneCount;
 
-    for (int i = 0; i < world->stoneCount; i++)
+    int drawableCount = game->drawableCount;
+    game->drawableCount += game->config.world.stoneCount;
+    for (int i = 0; i < game->config.world.stoneCount; i++)
     {
-        world->stones[i].size = randomFloat(0.5f, 1.4f);
-        world->stones[i].depth = randomFloat(1.5f, 10.4f);
-        world->stones[i].atAngle = randomFloat(averageAngleBetweenStones * i, averageAngleBetweenStones * (i + 1));
-        world->stones[i].stoneType = randomInt(STONE_TYPE_FIVE, STONE_TYPE_EIGHT);
+        game->drawables[drawableCount + i] = (RadialDrawable){
+            .atAngle = randomFloat(averageAngleBetweenStones * i, averageAngleBetweenStones * (i + 1)),
+            .atRadiusOffset = -randomFloat(1.85f, 9.4f),
+            .drawable = {
+                .type = randomInt(DRAW_POLY_5, DRAW_POLY_8),
+                .color = DARKGRAY,
+                .dimensions = {.x = randomFloat(0.5f, 1.4f)}}};
     }
 }
 
@@ -527,8 +738,10 @@ void GenerateMileStones(Game *game)
 
 void GenerateWorld(Game *game)
 {
-    GenerateTrees(game);
+    game->drawableCount = 0;
+
     GenerateClouds(game);
+    GenerateTrees(game);
     GenerateBushes(game);
     GenerateStones(game);
     GenerateMileStones(game);
@@ -568,6 +781,8 @@ void ScreenResized(Game *game, int width, int height, float dpi, bool isLandscap
     game->display.lineThicknessFactor = game->display.pixelsPerUnit / 70.0f;
     game->display.cwidth = game->display.pixelsPerUnit * (isLandscape ? game->display.cHeightUnits : game->display.cWidthUnits);
     game->display.cheight = game->display.pixelsPerUnit * (isLandscape ? game->display.cWidthUnits : game->display.cHeightUnits);
+    game->display.cwidthOffset = (width - game->display.cwidth) / 2;
+    game->display.cheightOffset = (height - game->display.height) / 2;
     game->display.floorRadiusUnits = (isLandscape ? game->display.cheight : game->display.cwidth) / (2 * sinf(game->config.camera.angleShowWhileMoving * DEG2RAD * 0.5f));
     game->display.floorRadiusUnits /= game->display.pixelsPerUnit;
 
@@ -634,14 +849,14 @@ void InitConfig(Game *game, int width, int height, float dpi, bool isLandscape)
         game->config.world.cloudCount = 30;
         game->config.world.bushCount = 40;
         game->config.world.stoneCount = 65;
-        game->config.world.milestoneCount = 5;
+        game->config.world.milestoneCount = 0;
     }
 
     // Editor
     {
         game->config.editor.showDemoWindow = false;
         game->config.editor.showAngleValues = false;
-        game->config.editor.showRadialLines = false;
+        game->config.editor.showRadialLines = true;
     }
     game->config.gameplay.timeForFullRotation = 120.0f;
     game->config.gameplay.speedInDegreesPerSecondStart = 360.0f / game->config.gameplay.timeForFullRotation;
@@ -692,6 +907,16 @@ void InitGame(Game *game, int width, int height, float dpi, bool isLandscape)
 char *start = "Tap and Hold to START";
 char *stop = "Tap and Hold to FINISH";
 char *wait = "Tap and Hold to OBSERVE";
+
+void DrawSomething(float pixelsPerUnit)
+{
+    DrawTriangle(
+        (Vector2){-10 * pixelsPerUnit, 0},
+        (Vector2){10 * pixelsPerUnit, 0},
+        (Vector2){0, -10 * pixelsPerUnit},
+
+        RED);
+}
 
 void UpdateDrawFrame(void)
 {
@@ -969,91 +1194,13 @@ void UpdateDrawFrame(void)
         // DrawCircleSector((Vector2){game.display.width / 4, game.display.height / 4}, 50 * game.display.lineThicknessFactor, 0, 360, 36, ORANGE);
         BeginMode2D(*game.display.cameraInUse);
 
-        float playerAngleInRad = game.player.atAngle * DEG2RAD;
+        // float playerAngleInRad = game.player.atAngle * DEG2RAD;
         float lineThickness = game.display.lineThicknessFactor * 7;
         if (game.display.cameraInUse == &game.display.worldCamera)
         {
             lineThickness *= 3.0f;
         }
         int segments = 36;
-        // Draw Clouds
-        for (int i = 0; i < game.world.cloudCount; i++)
-        {
-            Cloud *clouds = game.world.clouds;
-            float radius = floorRadius + clouds[i].floatingHeight * pixelsPerUnit;
-            float cloudX = radius * sinf(clouds[i].atAngle * DEG2RAD);
-            float cloudY = -radius * cosf(clouds[i].atAngle * DEG2RAD);
-
-            DrawRectanglePro(
-                (Rectangle){cloudX, cloudY, clouds[i].width * pixelsPerUnit, clouds[i].height * pixelsPerUnit},
-                (Vector2){clouds[i].width * pixelsPerUnit / 2, 0},
-                (clouds[i].atAngle + 180),
-                LIGHTGRAY);
-            DrawRectangleLinesPro(
-                (Rectangle){cloudX, cloudY, clouds[i].width * pixelsPerUnit, clouds[i].height * pixelsPerUnit},
-                (clouds[i].atAngle + 180),
-                BLACK, lineThickness);
-        }
-
-        Tree *trees = game.world.trees;
-        // Draw Trees
-        for (int i = 0; i < game.world.treeCount; i++)
-        {
-
-            float treeWidth = trees[i].width * pixelsPerUnit;
-            float treeHeight = trees[i].height * pixelsPerUnit;
-            float treeX = (floorRadius)*sinf(trees[i].atAngle * DEG2RAD);
-            float treeY = -floorRadius * cosf(trees[i].atAngle * DEG2RAD);
-            DrawRectanglePro(
-                (Rectangle){treeX, treeY, treeWidth, treeHeight},
-                (Vector2){treeWidth / 2, 0},
-                (trees[i].atAngle + 180),
-                trees[i].trunkColor);
-            DrawRectangleLinesPro(
-                (Rectangle){treeX, treeY, treeWidth, treeHeight},
-                (trees[i].atAngle + 180),
-                BLACK, lineThickness);
-
-            float canopyX = (floorRadius + treeHeight) * sinf(trees[i].atAngle * DEG2RAD);
-            float canopyY = -(floorRadius + treeHeight) * cosf(trees[i].atAngle * DEG2RAD);
-            float canopyWidth = trees[i].canopyWidth * pixelsPerUnit;
-            float canopyHeight = trees[i].canopyHeight * pixelsPerUnit;
-            switch (trees[i].treeType)
-            {
-            case TREE_TYPE_RECT:
-                DrawRectanglePro(
-                    (Rectangle){canopyX, canopyY, canopyWidth, canopyHeight},
-                    (Vector2){canopyWidth / 2, 0},
-                    (trees[i].atAngle + 180),
-                    trees[i].canopyColor);
-                DrawRectangleLinesPro(
-                    (Rectangle){canopyX, canopyY, canopyWidth, canopyHeight},
-                    (trees[i].atAngle + 180),
-                    BLACK, lineThickness);
-                break;
-            case TREE_TYPE_TRIANGLE:
-            {
-                Vector2 top = (Vector2){
-                    (floorRadius + treeHeight + canopyHeight) * sinf(trees[i].atAngle * DEG2RAD),
-                    -(floorRadius + treeHeight + canopyHeight) * cosf(trees[i].atAngle * DEG2RAD)};
-                Vector2 left = (Vector2){
-                    (floorRadius + treeHeight) * sinf(trees[i].atAngle * DEG2RAD) - canopyWidth / 2 * cosf(trees[i].atAngle * DEG2RAD),
-                    -(floorRadius + treeHeight) * cosf(trees[i].atAngle * DEG2RAD) - canopyWidth / 2 * sinf(trees[i].atAngle * DEG2RAD)};
-                Vector2 right = (Vector2){
-                    (floorRadius + treeHeight) * sinf(trees[i].atAngle * DEG2RAD) + canopyWidth / 2 * cosf(trees[i].atAngle * DEG2RAD),
-                    -(floorRadius + treeHeight) * cosf(trees[i].atAngle * DEG2RAD) + canopyWidth / 2 * sinf(trees[i].atAngle * DEG2RAD)};
-                DrawTriangle(top, left, right, trees[i].canopyColor);
-                DrawLineEx(top, left, lineThickness, BLACK);
-                DrawLineEx(left, right, lineThickness, BLACK);
-                DrawLineEx(right, top, lineThickness, BLACK);
-                break;
-            }
-            case TREE_TYPE_CIRCLE:
-                DrawCircleSector((Vector2){canopyX, canopyY}, canopyWidth / 2, 0, 360, 36, trees[i].canopyColor);
-                DrawRing((Vector2){canopyX, canopyY}, canopyWidth / 2, canopyWidth / 2 + lineThickness, 0, 360, 36, BLACK);
-                break;
-            }
-        }
 
         Color floorColor = LIME;
         float radiusTill = floorRadius;
@@ -1173,100 +1320,9 @@ void UpdateDrawFrame(void)
 
         float playerWidth = 1.2f * pixelsPerUnit;
         float playerHeight = 2.4f * pixelsPerUnit;
-        // Draw House
-        if (game.state != GAME_STATE_STOPPED)
-        {
-
-            float houseWidth = game.display.pixelsPerUnit * 6;
-            float houseHeight = game.display.pixelsPerUnit * 4;
-            float roofHeight = houseHeight * 0.75f;
-            float roofWidth = houseWidth * 1.5f;
-            DrawRectangle(-houseWidth / 2, -floorRadius - houseHeight - 2, houseWidth, houseHeight, BROWN);
-            DrawRectangleLinesPro((Rectangle){0, -floorRadius - houseHeight - 2, houseWidth, houseHeight}, 0, BLACK, lineThickness);
-            DrawTriangle((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, (Vector2){0, -floorRadius - houseHeight - roofHeight}, DARKBROWN);
-            DrawLineEx((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, lineThickness, BLACK);
-            DrawLineEx((Vector2){-roofWidth / 2, -floorRadius - houseHeight}, (Vector2){0, -floorRadius - houseHeight - roofHeight}, lineThickness, BLACK);
-            DrawLineEx((Vector2){0, -floorRadius - houseHeight - roofHeight}, (Vector2){roofWidth / 2, -floorRadius - houseHeight}, lineThickness, BLACK);
-            DrawRectangle(-playerWidth / 2, -floorRadius - playerHeight, playerWidth, playerHeight, BEIGE);
-            DrawRectangleLinesPro((Rectangle){0, -floorRadius - playerHeight, playerWidth, playerHeight}, 0, BLACK, 5 * game.display.lineThicknessFactor);
-        }
-
-        // Draw Instructions
-        Color instructionColor = MAROON;
-        if (game.state != GAME_STATE_STOPPED)
-        {
-            if (game.world.allVisited)
-            {
-
-                DrawText(stop, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.lineThicknessFactor, instructionColor);
-            }
-            else
-            {
-                if (game.state == GAME_STATE_START)
-                    DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.lineThicknessFactor, instructionColor);
-            }
-            DrawText("Tap to FLIP", round(-game.display.pixelsPerUnit * 8), round(-floorRadius * 1.2f), 160 * game.display.lineThicknessFactor, instructionColor);
-            DrawText(wait, round(-game.display.pixelsPerUnit * 16), round(-floorRadius * 1.3f), 180 * game.display.lineThicknessFactor, instructionColor);
-        }
 
         // Draw floor border
         DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorBorderThickness, 0, 360, 360, BLACK);
-        // Draw Player
-        if (game.state == GAME_STATE_PLAYING)
-        {
-
-            float wheelRadius = playerWidth * 0.55f;
-
-            float bodyWidth = playerWidth * 0.3f;
-            float bodyHeight = playerHeight * 0.4f;
-            float headRadius = bodyWidth * 0.7f;
-            float factor = game.player.state == PLAYER_STATE_MOVING_RIGHT || game.player.state == PLAYER_STATE_IDLE_RIGHT ? 1.0f : -1.0f;
-            // head
-            DrawCircle(
-                (floorRadius + wheelRadius * 1.75f + bodyHeight) * sinf(playerAngleInRad) - factor * bodyWidth * 0.5f * cosf(playerAngleInRad),
-                -(floorRadius + wheelRadius * 1.75f + bodyHeight) * cosf(playerAngleInRad) - factor * bodyWidth * 0.5f * sinf(playerAngleInRad),
-                headRadius, BLACK);
-            // Torso
-            DrawRectanglePro(
-                (Rectangle){
-                    (floorRadius + wheelRadius * 1.3f) * sinf(playerAngleInRad) - factor * bodyWidth * 0.5f * cosf(playerAngleInRad),
-                    -(floorRadius + wheelRadius * 1.3f) * cosf(playerAngleInRad) - factor * bodyWidth * 0.5f * sinf(playerAngleInRad),
-                    bodyWidth, bodyHeight},
-                (Vector2){bodyWidth / 2, 0},
-                (180 + game.player.atAngle),
-                BLACK);
-            // Legs
-            DrawRectanglePro(
-                (Rectangle){
-                    (floorRadius + wheelRadius * 1.3f) * sinf(playerAngleInRad) - factor * bodyWidth * 0.15f * cosf(playerAngleInRad),
-                    -(floorRadius + wheelRadius * 1.3f) * cosf(playerAngleInRad) - factor * bodyWidth * 0.15f * sinf(playerAngleInRad),
-                    bodyWidth, bodyHeight * 1.2f},
-                (Vector2){bodyWidth / 2, 0},
-                (270 * factor + 30 * factor + game.player.atAngle),
-                BLACK);
-
-            DrawRing((Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad)}, wheelRadius - 10 * game.display.lineThicknessFactor, wheelRadius, 0, 360, 60, BLACK);
-            DrawCircle((floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad), wheelRadius - 8 * game.display.lineThicknessFactor, GRAY);
-            float spokeThickness = 3 * game.display.lineThicknessFactor;
-            float spokeCount = 3;
-            for (int i = 0; i < spokeCount; i++)
-            {
-                DrawLineEx(
-                    (Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad), (-floorRadius - wheelRadius) * cosf(playerAngleInRad)},
-                    (Vector2){(floorRadius + wheelRadius) * sinf(playerAngleInRad) + wheelRadius * cosf((game.player.atAngle * 10 + i * 120) * DEG2RAD),
-                              (-floorRadius - wheelRadius) * cosf(playerAngleInRad) + wheelRadius * sinf((game.player.atAngle * 10 + i * 120) * DEG2RAD)},
-                    spokeThickness, BLACK);
-            }
-            // Arms
-            DrawRectanglePro(
-                (Rectangle){
-                    (floorRadius + wheelRadius * 2.45f) * sinf(playerAngleInRad) - factor * bodyWidth * 0.5f * cosf(playerAngleInRad),
-                    -(floorRadius + wheelRadius * 2.45f) * cosf(playerAngleInRad) - factor * bodyWidth * 0.5f * sinf(playerAngleInRad),
-                    bodyWidth * 0.5, bodyHeight * 0.8f},
-                (Vector2){bodyWidth * 0.25, 0},
-                (270 * factor + 30 * factor + game.player.atAngle),
-                BLACK);
-        }
 
         // Draw floor
         {
@@ -1295,17 +1351,6 @@ void UpdateDrawFrame(void)
             DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
         }
 
-        // Draw Stones
-        for (int i = 0; i < game.world.stoneCount; i++)
-        {
-            Stone *stones = game.world.stones;
-            float radius = floorRadius - stones[i].depth * pixelsPerUnit;
-
-            Vector2 stoneCenter = {radius * sinf(stones[i].atAngle * DEG2RAD), -radius * cosf(stones[i].atAngle * DEG2RAD)};
-
-            DrawPoly(stoneCenter, stones[i].stoneType, stones[i].size * pixelsPerUnit, stones[i].atAngle, DARKGRAY);
-            DrawPolyLinesEx(stoneCenter, stones[i].stoneType, stones[i].size * pixelsPerUnit, stones[i].atAngle, lineThickness, BLACK);
-        }
         if (config.editor.showAngleValues)
         {
             for (int i = 0; i < 360; i += 2)
@@ -1322,12 +1367,13 @@ void UpdateDrawFrame(void)
         }
 
         {
+            Display dsp = game.display;
             // Check collisions
-            Vector2 topLeft = GetScreenToWorld2D((Vector2){0, 0}, game.display.playerCamera);
-            Vector2 topRight = GetScreenToWorld2D((Vector2){game.display.width, 0}, game.display.playerCamera);
-            Vector2 bottomLeft = GetScreenToWorld2D((Vector2){0, game.display.height}, game.display.playerCamera);
-            Vector2 bottomRight = GetScreenToWorld2D((Vector2){game.display.width, game.display.height}, game.display.playerCamera);
-            if (game.display.defaultRotation == 90)
+            Vector2 topLeft = GetScreenToWorld2D((Vector2){dsp.cwidthOffset, dsp.cheightOffset}, game.display.playerCamera);
+            Vector2 topRight = GetScreenToWorld2D((Vector2){dsp.width - dsp.cwidthOffset, dsp.cheightOffset}, game.display.playerCamera);
+            Vector2 bottomLeft = GetScreenToWorld2D((Vector2){dsp.cwidthOffset, game.display.height - dsp.cheightOffset}, game.display.playerCamera);
+            Vector2 bottomRight = GetScreenToWorld2D((Vector2){game.display.width - dsp.cwidthOffset, game.display.height - dsp.cheightOffset}, game.display.playerCamera);
+            if (game.display.isLandscape)
             {
                 bottomLeft = GetScreenToWorld2D((Vector2){0, 0}, game.display.playerCamera);
                 topLeft = GetScreenToWorld2D((Vector2){game.display.width, 0}, game.display.playerCamera);
@@ -1419,29 +1465,132 @@ void UpdateDrawFrame(void)
             }
         }
 
-        for (int i = game.world.viewlineCount - 1; i >= 0; i -= 1)
+        for (int i = 0; i < game.drawableCount; i++)
         {
-            DrawTriangle(
-                (Vector2){0, 0},
-                Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit),
-                Vector2Scale(game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
-                ColorAlpha(GRAY, 0.95f));
+            RadialDraw(game.drawables[i]);
+        }
 
-            DrawTriangle(
-                Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit),
-                Vector2Scale(game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
-                Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit),
-                ColorAlpha(SKYBLUE, 0.9f));
-            DrawTriangle(
-                Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit),
-                Vector2Scale(game.world.skyViewlineEnds[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
-                Vector2Scale(game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
-                ColorAlpha(SKYBLUE, 0.9f));
-            if (game.state == GAME_STATE_STOPPED)
+        if (game.display.cameraInUse == &game.display.worldCamera && !IsKeyDown(KEY_SPACE))
+        {
+            for (int i = game.world.viewlineCount - 1; i >= 0; i -= 1)
             {
-                DrawLineEx(Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit), Vector2Scale(game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit), 30 * game.display.lineThicknessFactor, BLACK);
-                DrawLineEx(Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit), Vector2Scale(game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit), 30 * game.display.lineThicknessFactor, BLACK);
+                DrawTriangle(
+                    (Vector2){0, 0},
+                    Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit),
+                    Vector2Scale(game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
+                    ColorAlpha(GRAY, 0.95f));
+
+                DrawTriangle(
+                    Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit),
+                    Vector2Scale(game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
+                    Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit),
+                    ColorAlpha(SKYBLUE, 0.9f));
+                DrawTriangle(
+                    Vector2Scale(game.world.skyViewlineEnds[i], pixelsPerUnit),
+                    Vector2Scale(game.world.skyViewlineEnds[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
+                    Vector2Scale(game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit),
+                    ColorAlpha(SKYBLUE, 0.9f));
+                if (game.state == GAME_STATE_STOPPED)
+                {
+                    DrawLineEx(Vector2Scale(game.world.earthViewlineStarts[i], pixelsPerUnit), Vector2Scale(game.world.earthViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit), 30 * game.display.lineThicknessFactor, BLACK);
+                    DrawLineEx(Vector2Scale(game.world.skyViewlineStarts[i], pixelsPerUnit), Vector2Scale(game.world.skyViewlineStarts[(i == 0) ? game.world.viewlineCount - 1 : i - 1], pixelsPerUnit), 30 * game.display.lineThicknessFactor, BLACK);
+                }
             }
+        }
+
+        // Draw House
+        if (game.state != GAME_STATE_STOPPED)
+        {
+
+            RadialDrawable wall = {
+                .drawable = {.type = DRAW_RECTANGLE, .color = BROWN, .dimensions = {.x = 6.0f, .y = 4.0f}},
+                .atRadiusOffset = 0,
+                .atAngle = 0,
+            };
+            RadialDrawable door = {
+                .drawable = {.type = DRAW_RECTANGLE, .color = BEIGE, .dimensions = {.x = 1.2f, .y = 2.4f}},
+                .atRadiusOffset = 0,
+                .atAngle = 0,
+            };
+            RadialDrawable roof = {
+                .drawable = {.type = DRAW_TRIANGLE, .color = DARKBROWN, .dimensions = {.x = 9.0f, .y = 3.0f}},
+                .atRadiusOffset = wall.drawable.dimensions.y,
+                .atAngle = 0,
+            };
+
+            RadialDraw(wall);
+            RadialDraw(door);
+            RadialDraw(roof);
+        }
+
+        // Draw Player
+        if (game.state == GAME_STATE_PLAYING)
+        {
+
+            float wheelRadius = playerWidth * 0.55f;
+
+            float bodyWidth = playerWidth * 0.3f;
+            float bodyHeight = playerHeight * 0.4f;
+            float headRadius = bodyWidth * 0.7f;
+            float factor = game.player.state == PLAYER_STATE_MOVING_RIGHT || game.player.state == PLAYER_STATE_IDLE_RIGHT ? 1.0f : -1.0f;
+
+            BeginRadialDraw(floorRadius, game.player.atAngle);
+            DrawCircle(-factor * bodyWidth * 0.5f, -wheelRadius * 1.75f - bodyHeight, headRadius, BLACK); // head
+            DrawRectanglePro(                                                                             // Torso
+                (Rectangle){-factor * bodyWidth * 0.5f, -(wheelRadius * 1.3f),
+                            bodyWidth, bodyHeight},
+                (Vector2){bodyWidth / 2, 0},
+                (180),
+                BLACK);
+            DrawRectanglePro( // Legs
+                (Rectangle){
+                    -factor * bodyWidth * 0.15f,
+                    -(wheelRadius * 1.3f),
+                    bodyWidth, bodyHeight * 1.2f},
+                (Vector2){bodyWidth / 2, 0},
+                (270 * factor + 30 * factor),
+                BLACK);
+            DrawRing((Vector2){0, (-wheelRadius)}, wheelRadius - 10 * game.display.lineThicknessFactor, wheelRadius, 0, 360, 60, BLACK); // Wheelchair tire
+            DrawCircle(0, (-wheelRadius), wheelRadius - 8 * game.display.lineThicknessFactor, GRAY);                                     // Wheelchair spokes area
+
+            DrawRectanglePro( // arms
+                (Rectangle){
+                    -factor * bodyWidth * 0.5f,
+                    -(wheelRadius * 2.45f),
+                    bodyWidth * 0.5, bodyHeight * 0.8f},
+                (Vector2){bodyWidth * 0.25, 0},
+                (270 * factor + 30 * factor),
+                BLACK);
+
+            float spokeThickness = 3 * game.display.lineThicknessFactor;
+            float spokeCount = 3;
+            for (int i = 0; i < spokeCount; i++)
+            {
+                DrawLineEx(
+                    (Vector2){0, (-wheelRadius)},
+                    (Vector2){wheelRadius * cosf((game.player.atAngle * 10 + i * 120) * DEG2RAD),
+                              (-wheelRadius - wheelRadius * sinf((game.player.atAngle * 10 + i * 120) * DEG2RAD))},
+                    spokeThickness, BLACK);
+            }
+            EndRadialDraw();
+        }
+
+        // Draw Instructions
+        Color instructionColor = MAROON;
+        if (game.state != GAME_STATE_STOPPED)
+        {
+            if (game.world.allVisited)
+            {
+
+                DrawText(stop, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.lineThicknessFactor, instructionColor);
+            }
+            else
+            {
+                if (game.state == GAME_STATE_START)
+                    DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.lineThicknessFactor, instructionColor);
+            }
+            DrawText("Tap to FLIP", round(-game.display.pixelsPerUnit * 8), round(-floorRadius * 1.2f), 160 * game.display.lineThicknessFactor, instructionColor);
+            DrawText(wait, round(-game.display.pixelsPerUnit * 16), round(-floorRadius * 1.3f), 180 * game.display.lineThicknessFactor, instructionColor);
         }
 
         EndMode2D();
@@ -1474,30 +1623,32 @@ void TriggerSharePhoto()
     if (game.display.isLandscape)
     {
         ImageCrop(&share, (Rectangle){
-                              (game.display.width - game.display.cwidth) / 2, 
+                              (game.display.width - game.display.cwidth) / 2,
                               (game.display.height - game.display.cheight) / 2 + (game.display.cheight - game.display.cwidth) / 2,
-                              game.display.cwidth, 
+                              game.display.cwidth,
                               game.display.cwidth});
         ImageRotateCCW(&share);
     }
     else
     {
         ImageCrop(&share, (Rectangle){
-                              (game.display.width - game.display.cwidth) / 2 + (game.display.cwidth - game.display.cheight) / 2, 
+                              (game.display.width - game.display.cwidth) / 2 + (game.display.cwidth - game.display.cheight) / 2,
                               (game.display.height - game.display.cheight) / 2,
-                              game.display.cheight, 
+                              game.display.cheight,
                               game.display.cheight});
     }
 
     ExportImage(share, name);
 
 #ifdef PLATFORM_WEB
-    if (EM_JS_ShareSupported()) {
+    if (EM_JS_ShareSupported())
+    {
         EM_JS_ShareImage(name);
-    } else {
+    }
+    else
+    {
         EM_JS_DownloadImage(name);
     }
-    
 
 #endif
 }
