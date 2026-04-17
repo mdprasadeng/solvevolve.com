@@ -337,8 +337,8 @@ typedef enum DrawableType
     DRAW_POLY_6,
     DRAW_POLY_7,
     DRAW_POLY_8,
-    DRAW_CLOVER,
-    DRAW_GEAR,
+    DRAW_CLOUD,
+    DRAW_GRASS,
 } DrawableType;
 
 typedef struct Drawable
@@ -346,6 +346,7 @@ typedef struct Drawable
     DrawableType type;
     Vector2 dimensions;
     Vector2 metadata;
+    int seed;
     Color color;
 } Drawable;
 
@@ -382,10 +383,10 @@ void EndRadialDraw()
     rlPopMatrix();
 }
 
-float AngleByLine(Vector2 center, Vector2 point) {
+float AngleByLine(Vector2 center, Vector2 point)
+{
     float angle = atan2f(point.y - center.y, point.x - center.x) * RAD2DEG;
-    return angle < 0 ? 360 + angle : angle; 
-    
+    return angle < 0 ? 360 + angle : angle;
 }
 
 void RadialDraw(RadialDrawable data)
@@ -404,50 +405,69 @@ void RadialDraw(RadialDrawable data)
 
     switch (obj.type)
     {
-    case DRAW_CLOVER:
+    case DRAW_CLOUD:
     {
 
+        SetRandomSeed(obj.seed);
+        float angleToCover = obj.metadata.x;
+        int segments = obj.metadata.y;
+        float startAngle = 270 - (angleToCover) / 2;
+        float endAngle = 270 + (angleToCover) / 2;
+        float averageAngle = angleToCover / segments;
+
+        
+        float *angles = (float *)RL_MALLOC((segments + 1) * sizeof(float));
+    
+        //TODO: Precompute these
+        //TODO: Randomize start and end if full cirlce
+        angles[0] = startAngle;
+        angles[segments] = endAngle;
+        for (int i = 1; i < segments; i++)
+        {
+            float angleVariation = GetRandomValue(700, 1300) / 1000.0f;
+            angles[i] = angles[i - 1] + averageAngle * angleVariation;
+        }
+        Vector2 *points = (Vector2 *)RL_MALLOC((segments + 1) * sizeof(Vector2));
+
+        // Randomize
         Color color = obj.color;
         Vector2 center = {0};
         float radiusH = obj.dimensions.x * scale;
         float radiusV = obj.dimensions.y * scale;
 
-        int angles[] = {180, 210, 250 - 3, 290 + 3, 330, 360};
-        Vector2 points[6] = {0};
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < (segments + 1); i++)
         {
             points[i].x = center.x + cosf(DEG2RAD * angles[i]) * radiusH;
             points[i].y = center.y + sinf(DEG2RAD * angles[i]) * radiusV;
         }
 
-        for (int i = 0; i < 5; i++)
+        for (int i = 0; i < segments; i++)
         {
             Vector2 pointA = points[i];
             Vector2 pointB = points[i + 1];
+
             float chordLength = Vector2Distance(pointA, pointB);
             Vector2 normal = Vector2Normalize(Vector2Rotate(Vector2Subtract(pointB, pointA), 90 * DEG2RAD));
-            
             Vector2 pointCenter = Vector2Scale(Vector2Add(pointA, pointB), 0.5f);
             pointCenter = Vector2Add(pointCenter, Vector2Scale(normal, chordLength * 0.2f));
 
             float cloverRadius = Vector2Distance(pointCenter, pointA);
-            
             float fromAngle = AngleByLine(pointCenter, pointA);
-            
             float toAngle = AngleByLine(pointCenter, pointB);
-            if (toAngle < fromAngle) {
+            if (toAngle < fromAngle)
+            {
                 toAngle += 360;
             }
-            
 
-            DrawCircleSector(pointCenter, cloverRadius,fromAngle, toAngle, 10, obj.color);
-            DrawRing(pointCenter, cloverRadius-lineThickness, cloverRadius, fromAngle, toAngle, 10, BLACK);
+            DrawCircleSector(pointCenter, cloverRadius, fromAngle, toAngle, 10, obj.color);
+            DrawRing(pointCenter, cloverRadius - lineThickness, cloverRadius, fromAngle, toAngle, 10, BLACK);
         }
-        DrawLineEx(points[0], points[5], lineThickness, BLACK);
 
-        
+        DrawLineEx(points[0], center, lineThickness, BLACK);
+        DrawLineEx(center, points[segments], lineThickness, BLACK);
+
         rlBegin(RL_TRIANGLES);
-        for (int i = 0; i < 5; i++)
+        for (int i = 0; i < segments; i++)
         {
             Vector2 pointA = points[i];
             Vector2 pointB = points[i + 1];
@@ -459,14 +479,12 @@ void RadialDraw(RadialDrawable data)
         }
         rlEnd();
 
-       
-
         break;
     }
     case DRAW_CIRCLE:
     {
         DrawCircle(0, -obj.dimensions.x * scale * 0.5f, obj.dimensions.x * scale * 0.5f, obj.color);
-        DrawRing((Vector2){0, -obj.dimensions.x * scale * 0.5f}, obj.dimensions.x * scale * 0.5f - lineThickness, obj.dimensions.x * scale, 0, 360, 36, lineColor);
+        DrawRing((Vector2){0, -obj.dimensions.x * scale * 0.5f}, obj.dimensions.x * scale * 0.5f - lineThickness, obj.dimensions.x * scale * 0.5f, 0, 360, 36, lineColor);
         break;
     }
 
@@ -605,14 +623,14 @@ void GenerateTrees(Game *game)
 
     Color trunkColors[] = {BROWN, BROWN, DARKBROWN, DARKBROWN, DARKBROWN};
     Color canopyColors[] = {GREEN, LIME, LIME, LIME, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN};
-    int canopyTypes[] = {DRAW_CLOVER, DRAW_CLOVER, DRAW_RECTANGLE, DRAW_RECTANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE};
+    int canopyTypes[] = {DRAW_CIRCLE, DRAW_CLOUD, DRAW_RECTANGLE, DRAW_RECTANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE};
 
     for (int i = 0; i < game->config.world.treeCount; i++)
     {
         DrawableType canopyType = GetRandomInt(7, canopyTypes);
 
         RadialDrawable tree = {0};
-        RadialDrawable canopy = {0};
+        RadialDrawable canopy;
         switch (canopyType)
         {
         case DRAW_RECTANGLE:
@@ -628,11 +646,14 @@ void GenerateTrees(Game *game)
             canopy.drawable.dimensions.y = randomFloat(12.0f, 19.0f);
             break;
         case DRAW_CIRCLE:
-        case DRAW_CLOVER:
+        case DRAW_CLOUD:
             tree.drawable.dimensions.x = randomFloat(0.5f, 1.2f);
             tree.drawable.dimensions.y = randomFloat(8.0f, 16.0f);
             canopy.drawable.dimensions.x = randomFloat(8.0f, 12.0f);
             canopy.drawable.dimensions.y = randomFloat(6.0f, 10.0f);
+            canopy.drawable.seed = randomInt(0, INT32_MAX);
+            canopy.drawable.metadata.x = 180;
+            canopy.drawable.metadata.y = randomInt(3,6);
             break;
         default:
             break;
@@ -664,9 +685,12 @@ void GenerateClouds(Game *game)
             .atAngle = randomFloat(averageAngleBetween * i, averageAngleBetween * (i + 1)),
             .atRadiusOffset = randomFloat(12, 25),
             .drawable = {
-                .type = DRAW_RECTANGLE,
+                .seed = randomInt(0, INT32_MAX),
+                .metadata.x = 360,
+                .metadata.y = randomInt(6, 16),
+                .type = DRAW_CLOUD,
                 .color = LIGHTGRAY,
-                .dimensions = {.x = randomFloat(5, 15), .y = randomFloat(2, 8)}}};
+                .dimensions = {.x = randomFloat(5, 15), .y = randomFloat(4, 6)}}};
     }
 }
 
@@ -856,7 +880,7 @@ void InitConfig(Game *game, int width, int height, float dpi, bool isLandscape)
     {
         game->config.editor.showDemoWindow = false;
         game->config.editor.showAngleValues = false;
-        game->config.editor.showRadialLines = true;
+        game->config.editor.showRadialLines = false;
     }
     game->config.gameplay.timeForFullRotation = 120.0f;
     game->config.gameplay.speedInDegreesPerSecondStart = 360.0f / game->config.gameplay.timeForFullRotation;
