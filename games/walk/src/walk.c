@@ -2,13 +2,14 @@
 
 #include "raylib.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include "reasings.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 #include <time.h>
 #include "helper.h"
-#include "gen.c"
 
 #if defined(PLATFORM_WEB)
 #include <emscripten/emscripten.h>
@@ -96,50 +97,7 @@ bool EM_JS_ShareSupported()
 
 #pragma endregion
 
-#pragma region World-Data
-
-typedef enum PlayerState
-{
-    PLAYER_STATE_IDLE_LEFT = 0,
-    PLAYER_STATE_IDLE_RIGHT,
-    PLAYER_STATE_MOVING_LEFT,
-    PLAYER_STATE_MOVING_RIGHT
-} PlayerState;
-
-typedef struct Player
-{
-    float atAngle;
-    PlayerState state;
-    float movingTime;
-    float speedInDegreesPerSecond;
-} Player;
-
-typedef struct MileStone
-{
-    float size;
-    float atAngle;
-} MileStone;
-
-typedef struct World
-{
-    
-    int milestoneCount;
-    MileStone *milestones;
-
-    int viewlineCount;
-    Vector2 skyViewlineStarts[360];
-    Vector2 skyViewlineEnds[360];
-    Vector2 earthViewlineStarts[360];
-    bool visted[360];
-    bool allVisited;
-
-} World;
-
-typedef struct Controls
-{
-    float tappedDuration;
-    bool tappedOnLeft;
-} Controls;
+#pragma region Config-Data
 
 typedef enum
 {
@@ -157,43 +115,6 @@ typedef enum
     EASE_EXPONENTIAL_OUT,
 
 } EaseType;
-
-typedef struct Display
-{
-    bool isLandscape;
-    int width;
-    int height;
-    int cwidth;  // corrected width
-    int cheight; // corrected height
-    int cwidthOffset;
-    int cheightOffset;
-    int cWidthUnits;
-    int cHeightUnits;
-    int pixelsPerUnit;
-    float lineThicknessFactor;
-    float dpi;
-    float defaultRotation;
-    float floorRadiusUnits;
-
-    Camera2D *cameraInUse;
-    Camera2D playerCamera;
-    Camera2D worldCamera;
-    float zoomAtRest;
-    float zoomWhileMoving;
-
-    EaseType zoomEaseType;
-    float zoomStart;
-    float zoomEnd;
-    float zoomTime;
-    float elapsedZoomTime;
-    Vector2 startTarget;
-    Vector2 startOffset;
-    float startRotation;
-} Display;
-
-#pragma endregion
-
-#pragma region Config-Data
 
 typedef struct WorldConfig
 {
@@ -250,6 +171,84 @@ typedef struct Config
 
 #pragma endregion
 
+#pragma region World-Data
+
+typedef enum PlayerState
+{
+    PLAYER_STATE_IDLE_LEFT = 0,
+    PLAYER_STATE_IDLE_RIGHT,
+    PLAYER_STATE_MOVING_LEFT,
+    PLAYER_STATE_MOVING_RIGHT
+} PlayerState;
+
+typedef struct Player
+{
+    float atAngle;
+    PlayerState state;
+    float movingTime;
+    float speedInDegreesPerSecond;
+} Player;
+
+typedef struct MileStone
+{
+    float size;
+    float atAngle;
+} MileStone;
+
+typedef struct World
+{
+
+    int milestoneCount;
+    MileStone *milestones;
+
+    int viewlineCount;
+    Vector2 skyViewlineStarts[360];
+    Vector2 skyViewlineEnds[360];
+    Vector2 earthViewlineStarts[360];
+    bool visted[360];
+    bool allVisited;
+
+} World;
+
+typedef struct Controls
+{
+    float tappedDuration;
+    bool tappedOnLeft;
+} Controls;
+
+typedef struct Display
+{
+    bool isLandscape;
+    int width;
+    int height;
+    int cwidth;  // corrected width
+    int cheight; // corrected height
+    int cwidthOffset;
+    int cheightOffset;
+    int cWidthUnits;
+    int cHeightUnits;
+    int pixelsPerUnit;
+    float lineThicknessFactor;
+    float dpi;
+    float defaultRotation;
+    float floorRadiusUnits;
+
+    Camera2D *cameraInUse;
+    Camera2D playerCamera;
+    Camera2D worldCamera;
+    float zoomAtRest;
+    float zoomWhileMoving;
+
+    EaseType zoomEaseType;
+    float zoomStart;
+    float zoomEnd;
+    float zoomTime;
+    float elapsedZoomTime;
+    Vector2 startTarget;
+    Vector2 startOffset;
+    float startRotation;
+} Display;
+
 typedef enum GameState
 {
     GAME_STATE_START = 0,
@@ -267,11 +266,36 @@ typedef enum DrawableType
     DRAW_GRASS,
 } DrawableType;
 
+typedef struct PolyData
+{
+    float conerCount;
+    float dummy;
+} PolyData;
+
+typedef struct CloudData
+{
+    float angleCovered;
+    float segmentsCount;
+} CloudData;
+
+typedef struct GrassData
+{
+    float bladeCount;
+    float dummy;
+} GrassData;
+
+typedef union DrawableData
+{
+    PolyData poly;
+    CloudData cloud;
+    GrassData grass;
+} DrawableData;
+
 typedef struct Drawable
 {
     DrawableType type;
     Vector2 dimensions;
-    Vector2 metadata;
+    DrawableData metadata;
     int seed;
     Color color;
     void *computed;
@@ -296,318 +320,9 @@ typedef struct Game
     Controls controls;
 } Game;
 
+#pragma endregion
+
 Game game = {0};
-
-void BeginRadialDraw(float atRadius, float atAngle)
-{
-    rlPushMatrix();
-    rlTranslatef(atRadius * sinf(atAngle * DEG2RAD), -atRadius * cosf(atAngle * DEG2RAD), 0);
-    rlRotatef(atAngle, 0, 0, 1);
-}
-
-void EndRadialDraw()
-{
-    rlPopMatrix();
-}
-
-float AngleByLine(Vector2 center, Vector2 point)
-{
-    float angle = atan2f(point.y - center.y, point.x - center.x) * RAD2DEG;
-    return angle < 0 ? 360 + angle : angle;
-}
-
-void DistributeRandomly(float *result, int count, float sum, float min, float max)
-{
-
-    float total = 0;
-    for (int i = 0; i < count; i++)
-    {
-        result[i] = GetRandomValue(min * 100000 / sum, max * 100000 / sum) / 100000.0f;
-        total += result[i];
-    }
-
-    float scaleBy = sum / total;
-    for (int i = 0; i < count; i++)
-    {
-        result[i] *= scaleBy;
-    }
-}
-
-void DrawablePrecompute(Drawable *drawable)
-{
-    if (drawable->type == DRAW_CLOUD)
-    {
-        SetRandomSeed(drawable->seed);
-        float angleToCover = drawable->metadata.x;
-        int segments = drawable->metadata.y;
-        float startAngle = 270 - (angleToCover) / 2;
-        float endAngle = 270 + (angleToCover) / 2;
-        float averageAngle = angleToCover / segments;
-
-        float *angles = (float *)RL_MALLOC((segments + 1) * sizeof(float));
-
-        float *angleDistribution = (float *)RL_MALLOC((segments) * sizeof(float));
-        DistributeRandomly(angleDistribution, segments, angleToCover, 2, 4);
-
-        float startOffset = 0;
-        if (angleToCover == 360)
-        { // full circle randomize start and end
-            startOffset = averageAngle * GetRandomValue(500, 800) / 1000.0f;
-        }
-        angles[0] = startAngle + startOffset;
-        angles[segments] = endAngle + startOffset;
-        for (int i = 0; i < segments; i++)
-        {
-            angles[i + 1] = angles[i] + angleDistribution[i];
-        }
-        drawable->computed = angles;
-        RL_FREE(angleDistribution);
-    }
-    if (drawable->type == DRAW_POLY)
-    {
-        SetRandomSeed(drawable->seed);
-        float angleToCover = 360;
-        int segments = drawable->metadata.x;
-
-        float averageAngle = angleToCover / segments;
-        float *angles = (float *)RL_MALLOC((segments + 1) * sizeof(float));
-        float *angleDistribution = (float *)RL_MALLOC((segments) * sizeof(float));
-        DistributeRandomly(angleDistribution, segments, angleToCover, 2, 4);
-        float startOffset = 0;
-        if (angleToCover == 360)
-        { // full circle randomize start and end
-            startOffset = averageAngle * GetRandomValue(500, 800) / 1000.0f;
-        }
-        angles[0] = startOffset;
-        for (int i = 0; i < segments; i++)
-        {
-            angles[i + 1] = angles[i] + angleDistribution[i];
-        }
-        drawable->computed = angles;
-        RL_FREE(angleDistribution);
-    }
-    if (drawable->type == DRAW_GRASS)
-    {
-        SetRandomSeed(drawable->seed);
-        float width = drawable->dimensions.x;
-        float bladesCount = drawable->metadata.x;
-        float *bladeWidths = (float *)RL_MALLOC((bladesCount) * sizeof(float));
-        DistributeRandomly(bladeWidths, bladesCount, width, (width / bladesCount) * 0.8f, (width / bladesCount) * 1.2f);
-        drawable->computed = bladeWidths;
-    }
-}
-
-void FreeDrawable(Drawable drawable)
-{
-    if (drawable.type == DRAW_CLOUD)
-    {
-        RL_FREE(drawable.computed);
-    }
-}
-
-void RadialDraw(RadialDrawable data)
-{
-
-    float atRadius = (game.display.floorRadiusUnits + data.atRadiusOffset) * game.display.pixelsPerUnit;
-    float scale = game.display.pixelsPerUnit;
-    float lineThickness = 7 * game.display.lineThicknessFactor;
-    Color lineColor = BLACK;
-
-    rlPushMatrix();
-    rlTranslatef(atRadius * sinf(data.atAngle * DEG2RAD), -atRadius * cosf(data.atAngle * DEG2RAD), 0);
-    rlRotatef(data.atAngle, 0, 0, 1);
-
-    Drawable obj = data.drawable;
-
-    switch (obj.type)
-    {
-    case DRAW_CLOUD:
-    {
-
-        int angleCovered = data.drawable.metadata.x;
-        int segments = data.drawable.metadata.y;
-        Vector2 points[segments + 1];
-        float *angles = (float *)obj.computed;
-
-        Color color = obj.color;
-        Vector2 center = {0};
-        float radiusH = obj.dimensions.x * scale;
-        float radiusV = obj.dimensions.y * scale;
-
-        for (int i = 0; i < (segments + 1); i++)
-        {
-            points[i].x = center.x + cosf(DEG2RAD * angles[i]) * radiusH;
-            points[i].y = center.y + sinf(DEG2RAD * angles[i]) * radiusV;
-        }
-
-        
-        for (int i = 0; i < segments; i++)
-        {
-            Vector2 pointA = points[i];
-            Vector2 pointB = points[i + 1];
-
-            float chordLength = Vector2Distance(pointA, pointB);
-            Vector2 normal = Vector2Normalize(Vector2Rotate(Vector2Subtract(pointB, pointA), 90 * DEG2RAD));
-            Vector2 pointCenter = Vector2Scale(Vector2Add(pointA, pointB), 0.5f);
-            pointCenter = Vector2Add(pointCenter, Vector2Scale(normal, chordLength * 0.2f));
-
-            float cloverRadius = Vector2Distance(pointCenter, pointA);
-            float fromAngle = AngleByLine(pointCenter, pointA);
-            float toAngle = AngleByLine(pointCenter, pointB);
-            if (toAngle < fromAngle)
-            {
-                toAngle += 360;
-            }
-
-            
-            DrawCircleSector(pointCenter, cloverRadius, fromAngle, toAngle, 10, obj.color);
-            DrawRing(pointCenter, cloverRadius - lineThickness * 0.8f, cloverRadius, fromAngle - 2.0f, toAngle, 10, BLACK);
-        }
-
-        if (angleCovered != 360) {
-            DrawLineEx(points[0], center, lineThickness, BLACK);
-            DrawLineEx(center, points[segments], lineThickness, BLACK);
-        }
-        
-        rlBegin(RL_TRIANGLES);
-        for (int i = 0; i < segments; i++)
-        {
-            Vector2 pointA = points[i];
-            Vector2 pointB = points[i + 1];
-
-            rlColor4ub(color.r, color.g, color.b, color.a);
-            rlVertex2f(center.x, center.y);
-            rlVertex2f(pointB.x, pointB.y);
-            rlVertex2f(pointA.x, pointA.y);
-        }
-        rlEnd();
-
-        
-
-        break;
-    }
-    case DRAW_CIRCLE:
-    {
-        DrawCircle(0, -obj.dimensions.x * scale * 0.5f, obj.dimensions.x * scale * 0.5f, obj.color);
-        DrawRing((Vector2){0, -obj.dimensions.x * scale * 0.5f}, obj.dimensions.x * scale * 0.5f - lineThickness, obj.dimensions.x * scale * 0.5f, 0, 360, 36, lineColor);
-        break;
-    }
-
-    case DRAW_TRIANGLE:
-    {
-        Vector2 left = {.x = -obj.dimensions.x * scale * 0.5f, .y = 0};
-        Vector2 right = {.x = obj.dimensions.x * scale * 0.5f, .y = 0};
-        Vector2 top = {.x = 0, .y = -obj.dimensions.y * scale};
-
-        DrawTriangle(left, right, top, obj.color);
-        DrawLineEx(left, right, lineThickness, lineColor);
-        DrawLineEx(right, top, lineThickness, lineColor);
-        DrawLineEx(top, left, lineThickness, lineColor);
-        break;
-    }
-
-    case DRAW_RECTANGLE:
-    {
-        Rectangle rect = {
-            .x = -obj.dimensions.x * scale * 0.5f,
-            .y = -obj.dimensions.y * scale,
-            .width = obj.dimensions.x * scale,
-            .height = obj.dimensions.y * scale};
-
-        DrawRectangleRec(rect, obj.color);
-        DrawRectangleLinesEx(rect, lineThickness, lineColor);
-        break;
-    }
-
-    case DRAW_POLY:
-    {
-
-        int segments = data.drawable.metadata.x;
-        Vector2 points[segments + 1];
-        float *angles = (float *)obj.computed;
-
-        Color color = obj.color;
-        Vector2 center = {0};
-        float radiusH = obj.dimensions.x * scale;
-        float radiusV = obj.dimensions.y * scale;
-
-        for (int i = 0; i < (segments + 1); i++)
-        {
-            points[i].x = center.x + cosf(DEG2RAD * angles[i]) * radiusH;
-            points[i].y = center.y + sinf(DEG2RAD * angles[i]) * radiusV;
-            if (i > 0)
-            {
-                DrawLineEx(points[i], points[i - 1], lineThickness, BLACK);
-            }
-        }
-        DrawLineEx(points[0], points[segments], lineThickness, BLACK);
-
-        rlBegin(RL_TRIANGLES);
-        for (int i = 0; i < segments; i++)
-        {
-            Vector2 pointA = points[i];
-            Vector2 pointB = points[i + 1];
-
-            rlColor4ub(color.r, color.g, color.b, color.a);
-            rlVertex2f(center.x, center.y);
-            rlVertex2f(pointB.x, pointB.y);
-            rlVertex2f(pointA.x, pointA.y);
-        }
-        rlEnd();
-        break;
-    }
-    case DRAW_GRASS:
-    {
-
-        int bladesCount = data.drawable.metadata.x;
-        Vector2 basePoints[bladesCount + 1];
-        Vector2 topPoints[bladesCount];
-
-        float *bladeWidths = (float *)data.drawable.computed;
-        Color color = obj.color;
-
-        float width = obj.dimensions.x * scale;
-        float height = obj.dimensions.y * scale;
-
-        basePoints[0] = (Vector2){
-            .x = -width / 2,
-            .y = 0};
-
-        for (int i = 1; i < (bladesCount + 1); i++)
-        {
-            basePoints[i].x = basePoints[i - 1].x + bladeWidths[i - 1] * scale;
-            basePoints[i].y = 0;
-
-            topPoints[i - 1].x = (basePoints[i].x + basePoints[i - 1].x) / 2;
-            topPoints[i - 1].y = -height;
-            DrawLineEx(topPoints[i - 1], basePoints[i], lineThickness, BLACK);
-            DrawLineEx(topPoints[i - 1], basePoints[i - 1], lineThickness, BLACK);
-        }
-
-        DrawLineEx(basePoints[0], basePoints[bladesCount], lineThickness, BLACK);
-
-        rlBegin(RL_TRIANGLES);
-        for (int i = 0; i < bladesCount; i++)
-        {
-            Vector2 pointLeft = basePoints[i];
-            Vector2 pointRight = basePoints[i + 1];
-            Vector2 pointTop = topPoints[i];
-
-            rlColor4ub(color.r, color.g, color.b, color.a);
-            rlVertex2f(pointLeft.x, pointLeft.y);
-            rlVertex2f(pointRight.x, pointRight.y);
-            rlVertex2f(pointTop.x, pointTop.y);
-        }
-        rlEnd();
-
-        break;
-    }
-    default:
-        break;
-    }
-
-    rlPopMatrix();
-}
 
 #pragma region func definitions
 void InitGame(Game *game, int width, int height, float dpi, bool isLandscape);
@@ -665,17 +380,8 @@ int main(void)
 
 #pragma region Game Generation Functions
 
-Color GetRandomColor(int count, Color options[])
-{
-    int index = randomInt(0, count - 1);
-    return options[index];
-}
-
-int GetRandomInt(int count, int options[])
-{
-    int index = randomInt(0, count - 1);
-    return options[index];
-}
+void AddToRadialDrawables(Game *game, RadialDrawable rDrawable);
+void FreeDrawable(Drawable drawable);
 
 void GenerateTrees(Game *game)
 {
@@ -683,16 +389,13 @@ void GenerateTrees(Game *game)
     float averageAngleBetweenTrees = 360.0f / game->config.world.treeCount;
     float angleOffset = averageAngleBetweenTrees * 0.1f;
 
-    int drawableOffset = game->drawableCount;
-    game->drawableCount += game->config.world.treeCount * 2;
-
     Color trunkColors[] = {BROWN, BROWN, DARKBROWN, DARKBROWN, DARKBROWN};
     Color canopyColors[] = {GREEN, LIME, LIME, LIME, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN};
     int canopyTypes[] = {DRAW_CIRCLE, DRAW_CIRCLE, DRAW_RECTANGLE, DRAW_RECTANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE};
 
     for (int i = 0; i < game->config.world.treeCount; i++)
     {
-        DrawableType canopyType = GetRandomInt(7, canopyTypes);
+        DrawableType canopyType = GetOneRandomIntFrom(7, canopyTypes);
 
         RadialDrawable tree = {0};
         RadialDrawable canopy;
@@ -711,14 +414,11 @@ void GenerateTrees(Game *game)
             canopy.drawable.dimensions.y = randomFloat(12.0f, 19.0f);
             break;
         case DRAW_CIRCLE:
-        case DRAW_CLOUD:
             tree.drawable.dimensions.x = randomFloat(0.5f, 1.2f);
             tree.drawable.dimensions.y = randomFloat(8.0f, 16.0f);
             canopy.drawable.dimensions.x = randomFloat(8.0f, 12.0f);
             canopy.drawable.dimensions.y = randomFloat(6.0f, 10.0f);
             canopy.drawable.seed = randomInt(0, INT32_MAX);
-            canopy.drawable.metadata.x = 180;
-            canopy.drawable.metadata.y = randomInt(3, 6);
             break;
         default:
             break;
@@ -726,15 +426,15 @@ void GenerateTrees(Game *game)
         tree.atAngle = randomFloat(averageAngleBetweenTrees * i + angleOffset, averageAngleBetweenTrees * (i + 1) - angleOffset);
         tree.atRadiusOffset = 0;
         tree.drawable.type = DRAW_RECTANGLE;
-        tree.drawable.color = GetRandomColor(5, trunkColors);
+        tree.drawable.color = GetOneRandomColorFrom(5, trunkColors);
 
         canopy.drawable.type = canopyType;
-        canopy.drawable.color = GetRandomColor(10, canopyColors);
+        canopy.drawable.color = GetOneRandomColorFrom(10, canopyColors);
         canopy.atAngle = tree.atAngle;
         canopy.atRadiusOffset = tree.drawable.dimensions.y;
 
-        game->drawables[drawableOffset + i * 2] = tree;
-        game->drawables[drawableOffset + i * 2 + 1] = canopy;
+        AddToRadialDrawables(game, tree);
+        AddToRadialDrawables(game, canopy);
     }
 }
 
@@ -742,21 +442,19 @@ void GenerateClouds(Game *game)
 {
     float averageAngleBetween = 360.0f / game->config.world.cloudCount;
 
-    int drawableCount = game->drawableCount;
-    game->drawableCount += game->config.world.cloudCount;
     for (int i = 0; i < game->config.world.cloudCount; i++)
     {
-        game->drawables[drawableCount + i] = (RadialDrawable){
+        RadialDrawable cloud = {
             .atAngle = randomFloat(averageAngleBetween * i, averageAngleBetween * (i + 1)),
             .atRadiusOffset = randomFloat(12, 25),
             .drawable = {
                 .seed = randomInt(0, INT32_MAX),
-                .metadata.x = 360,
-                .metadata.y = randomInt(8, 16),
+                .metadata.cloud.angleCovered = 360,
+                .metadata.cloud.segmentsCount = randomInt(8, 16),
                 .type = DRAW_CLOUD,
                 .color = LIGHTGRAY,
                 .dimensions = {.x = randomFloat(5, 15), .y = randomFloat(4, 6)}}};
-        DrawablePrecompute(&game->drawables[drawableCount + i].drawable);
+        AddToRadialDrawables(game, cloud);
     }
 }
 
@@ -765,45 +463,43 @@ void GenerateBushes(Game *game)
 
     float averageAngleBetween = 360.0f / game->config.world.bushCount;
 
-    int drawableCount = game->drawableCount;
-    game->drawableCount += game->config.world.bushCount;
     int bushTypes[] = {DRAW_CLOUD, DRAW_GRASS, DRAW_GRASS};
     for (int i = 0; i < game->config.world.bushCount; i++)
     {
-        DrawableType bushType = GetRandomInt(3, bushTypes);
+        DrawableType bushType = GetOneRandomIntFrom(3, bushTypes);
         switch (bushType)
         {
         case DRAW_CLOUD:
         {
-            game->drawables[drawableCount + i] = (RadialDrawable){
+            RadialDrawable bush = {
                 .atAngle = randomFloat(averageAngleBetween * i, averageAngleBetween * (i + 1)),
                 .atRadiusOffset = 0,
                 .drawable = {
                     .seed = randomInt(0, INT32_MAX),
-                    .metadata.x = 180,
-                    .metadata.y = randomInt(3, 6),
+                    .metadata.cloud.angleCovered = 180,
+                    .metadata.cloud.segmentsCount = randomInt(3, 6),
                     .type = DRAW_CLOUD,
                     .color = LIME,
                     .dimensions = {.x = randomFloat(1.6f, 3.9f), .y = randomFloat(1.5f, 3.2f)}}};
-            DrawablePrecompute(&game->drawables[drawableCount + i].drawable);
+            AddToRadialDrawables(game, bush);
             break;
         }
         case DRAW_GRASS:
         {
-            game->drawables[drawableCount + i] = (RadialDrawable){
+            RadialDrawable grass = {
                 .atAngle = randomFloat(averageAngleBetween * i, averageAngleBetween * (i + 1)),
                 .atRadiusOffset = 0,
                 .drawable = {
                     .seed = randomInt(0, INT32_MAX),
-                    .metadata.x = randomInt(4, 6),
+                    .metadata.grass.bladeCount = randomInt(4, 6),
                     .type = DRAW_GRASS,
                     .color = LIME,
                     .dimensions = {.x = randomFloat(1.6f, 3.2f), .y = randomFloat(1.5f, 2.2f)}}};
-            DrawablePrecompute(&game->drawables[drawableCount + i].drawable);
+            AddToRadialDrawables(game, grass);
             break;
         }
         default:
-        break;
+            break;
         }
     }
 }
@@ -812,22 +508,20 @@ void GenerateStones(Game *game)
 {
     float averageAngleBetweenStones = 360.0f / game->config.world.stoneCount;
 
-    int drawableCount = game->drawableCount;
-    game->drawableCount += game->config.world.stoneCount;
     int cornerDistribution[] = {5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 7, 7, 8, 8};
     for (int i = 0; i < game->config.world.stoneCount; i++)
     {
         float width = randomFloat(0.5f, 1.4f);
-        game->drawables[drawableCount + i] = (RadialDrawable){
+        RadialDrawable stone = {
             .atAngle = randomFloat(averageAngleBetweenStones * i, averageAngleBetweenStones * (i + 1)),
             .atRadiusOffset = -randomFloat(1.25f, 9.4f),
             .drawable = {
                 .type = DRAW_POLY,
                 .metadata = {
-                    .x = GetRandomInt(16, cornerDistribution)},
+                    .poly = {.conerCount = GetOneRandomIntFrom(16, cornerDistribution)}},
                 .color = DARKGRAY,
                 .dimensions = {.x = width, .y = width * randomFloat(0.9f, 1.0f)}}};
-        DrawablePrecompute(&game->drawables[drawableCount + i].drawable);
+        AddToRadialDrawables(game, stone);
     }
 }
 
@@ -1018,14 +712,296 @@ char *start = "Tap and Hold to START";
 char *stop = "Tap and Hold to FINISH";
 char *wait = "Tap and Hold to OBSERVE";
 
-void DrawSomething(float pixelsPerUnit)
+void BeginRadialDraw(float atRadius, float atAngle)
 {
-    DrawTriangle(
-        (Vector2){-10 * pixelsPerUnit, 0},
-        (Vector2){10 * pixelsPerUnit, 0},
-        (Vector2){0, -10 * pixelsPerUnit},
+    rlPushMatrix();
+    rlTranslatef(atRadius * sinf(atAngle * DEG2RAD), -atRadius * cosf(atAngle * DEG2RAD), 0);
+    rlRotatef(atAngle, 0, 0, 1);
+}
 
-        RED);
+void EndRadialDraw()
+{
+    rlPopMatrix();
+}
+
+void PrecomputeDrawable(Drawable *drawable)
+{
+    if (drawable->type == DRAW_CLOUD)
+    {
+        SetRandomSeed(drawable->seed);
+        float angleToCover = drawable->metadata.cloud.angleCovered;
+        int segments = drawable->metadata.cloud.segmentsCount;
+        float startAngle = 270 - (angleToCover) / 2;
+        float endAngle = 270 + (angleToCover) / 2;
+        float averageAngle = angleToCover / segments;
+
+        float *angles = (float *)RL_MALLOC((segments + 1) * sizeof(float));
+
+        float *angleDistribution = (float *)RL_MALLOC((segments) * sizeof(float));
+        GetRandomValueDistribution(angleDistribution, segments, angleToCover, 2, 4);
+
+        float startOffset = 0;
+        if (angleToCover == 360)
+        { // full circle randomize start and end
+            startOffset = averageAngle * GetRandomValue(500, 800) / 1000.0f;
+        }
+        angles[0] = startAngle + startOffset;
+        angles[segments] = endAngle + startOffset;
+        for (int i = 0; i < segments; i++)
+        {
+            angles[i + 1] = angles[i] + angleDistribution[i];
+        }
+        drawable->computed = angles;
+        RL_FREE(angleDistribution);
+    }
+    if (drawable->type == DRAW_POLY)
+    {
+        SetRandomSeed(drawable->seed);
+        float angleToCover = 360;
+        int segments = drawable->metadata.poly.conerCount;
+
+        float averageAngle = angleToCover / segments;
+        float *angles = (float *)RL_MALLOC((segments + 1) * sizeof(float));
+        float *angleDistribution = (float *)RL_MALLOC((segments) * sizeof(float));
+        GetRandomValueDistribution(angleDistribution, segments, angleToCover, 2, 4);
+        float startOffset = 0;
+        if (angleToCover == 360)
+        { // full circle randomize start and end
+            startOffset = averageAngle * GetRandomValue(500, 800) / 1000.0f;
+        }
+        angles[0] = startOffset;
+        for (int i = 0; i < segments; i++)
+        {
+            angles[i + 1] = angles[i] + angleDistribution[i];
+        }
+        drawable->computed = angles;
+        RL_FREE(angleDistribution);
+    }
+    if (drawable->type == DRAW_GRASS)
+    {
+        SetRandomSeed(drawable->seed);
+        float width = drawable->dimensions.x;
+        float bladesCount = drawable->metadata.grass.bladeCount;
+        float *bladeWidths = (float *)RL_MALLOC((bladesCount) * sizeof(float));
+        GetRandomValueDistribution(bladeWidths, bladesCount, width, (width / bladesCount) * 0.8f, (width / bladesCount) * 1.2f);
+        drawable->computed = bladeWidths;
+    }
+}
+
+void AddToRadialDrawables(Game *game, RadialDrawable rDrawable)
+{
+    game->drawables[game->drawableCount] = rDrawable;
+    PrecomputeDrawable(&game->drawables[game->drawableCount].drawable);
+    game->drawableCount++;
+}
+
+void FreeDrawable(Drawable drawable)
+{
+    if (drawable.type == DRAW_CLOUD)
+    {
+        RL_FREE(drawable.computed);
+    }
+}
+
+void DrawAtRadiusAndAngle(RadialDrawable data)
+{
+
+    float atRadius = (game.display.floorRadiusUnits + data.atRadiusOffset) * game.display.pixelsPerUnit;
+    float scale = game.display.pixelsPerUnit;
+    float lineThickness = 7 * game.display.lineThicknessFactor;
+    Color lineColor = BLACK;
+
+    rlPushMatrix();
+    rlTranslatef(atRadius * sinf(data.atAngle * DEG2RAD), -atRadius * cosf(data.atAngle * DEG2RAD), 0);
+    rlRotatef(data.atAngle, 0, 0, 1);
+
+    Drawable obj = data.drawable;
+
+    switch (obj.type)
+    {
+    case DRAW_CLOUD:
+    {
+
+        int angleCovered = data.drawable.metadata.cloud.angleCovered;
+        int segments = data.drawable.metadata.cloud.segmentsCount;
+        Vector2 points[segments + 1];
+        float *angles = (float *)obj.computed;
+
+        Color color = obj.color;
+        Vector2 center = {0};
+        float radiusH = obj.dimensions.x * scale;
+        float radiusV = obj.dimensions.y * scale;
+
+        for (int i = 0; i < (segments + 1); i++)
+        {
+            points[i].x = center.x + cosf(DEG2RAD * angles[i]) * radiusH;
+            points[i].y = center.y + sinf(DEG2RAD * angles[i]) * radiusV;
+        }
+
+        for (int i = 0; i < segments; i++)
+        {
+            Vector2 pointA = points[i];
+            Vector2 pointB = points[i + 1];
+
+            float chordLength = Vector2Distance(pointA, pointB);
+            Vector2 normal = Vector2Normalize(Vector2Rotate(Vector2Subtract(pointB, pointA), 90 * DEG2RAD));
+            Vector2 pointCenter = Vector2Scale(Vector2Add(pointA, pointB), 0.5f);
+            pointCenter = Vector2Add(pointCenter, Vector2Scale(normal, chordLength * 0.2f));
+
+            float cloverRadius = Vector2Distance(pointCenter, pointA);
+            float fromAngle = AngleByLine(pointCenter, pointA);
+            float toAngle = AngleByLine(pointCenter, pointB);
+            if (toAngle < fromAngle)
+            {
+                toAngle += 360;
+            }
+
+            DrawCircleSector(pointCenter, cloverRadius, fromAngle, toAngle, 10, obj.color);
+            DrawRing(pointCenter, cloverRadius - lineThickness * 0.8f, cloverRadius, fromAngle - 2.0f, toAngle, 10, BLACK);
+        }
+
+        if (angleCovered != 360)
+        {
+            DrawLineEx(points[0], center, lineThickness, BLACK);
+            DrawLineEx(center, points[segments], lineThickness, BLACK);
+        }
+
+        rlBegin(RL_TRIANGLES);
+        for (int i = 0; i < segments; i++)
+        {
+            Vector2 pointA = points[i];
+            Vector2 pointB = points[i + 1];
+
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlVertex2f(center.x, center.y);
+            rlVertex2f(pointB.x, pointB.y);
+            rlVertex2f(pointA.x, pointA.y);
+        }
+        rlEnd();
+
+        break;
+    }
+    case DRAW_CIRCLE:
+    {
+        DrawCircle(0, -obj.dimensions.x * scale * 0.5f, obj.dimensions.x * scale * 0.5f, obj.color);
+        DrawRing((Vector2){0, -obj.dimensions.x * scale * 0.5f}, obj.dimensions.x * scale * 0.5f - lineThickness, obj.dimensions.x * scale * 0.5f, 0, 360, 36, lineColor);
+        break;
+    }
+
+    case DRAW_TRIANGLE:
+    {
+        Vector2 left = {.x = -obj.dimensions.x * scale * 0.5f, .y = 0};
+        Vector2 right = {.x = obj.dimensions.x * scale * 0.5f, .y = 0};
+        Vector2 top = {.x = 0, .y = -obj.dimensions.y * scale};
+
+        DrawTriangle(left, right, top, obj.color);
+        DrawLineEx(left, right, lineThickness, lineColor);
+        DrawLineEx(right, top, lineThickness, lineColor);
+        DrawLineEx(top, left, lineThickness, lineColor);
+        break;
+    }
+
+    case DRAW_RECTANGLE:
+    {
+        Rectangle rect = {
+            .x = -obj.dimensions.x * scale * 0.5f,
+            .y = -obj.dimensions.y * scale,
+            .width = obj.dimensions.x * scale,
+            .height = obj.dimensions.y * scale};
+
+        DrawRectangleRec(rect, obj.color);
+        DrawRectangleLinesEx(rect, lineThickness, lineColor);
+        break;
+    }
+
+    case DRAW_POLY:
+    {
+
+        int segments = data.drawable.metadata.poly.conerCount;
+        Vector2 points[segments + 1];
+        float *angles = (float *)obj.computed;
+
+        Color color = obj.color;
+        Vector2 center = {0};
+        float radiusH = obj.dimensions.x * scale;
+        float radiusV = obj.dimensions.y * scale;
+
+        for (int i = 0; i < (segments + 1); i++)
+        {
+            points[i].x = center.x + cosf(DEG2RAD * angles[i]) * radiusH;
+            points[i].y = center.y + sinf(DEG2RAD * angles[i]) * radiusV;
+            if (i > 0)
+            {
+                DrawLineEx(points[i], points[i - 1], lineThickness, BLACK);
+            }
+        }
+        DrawLineEx(points[0], points[segments], lineThickness, BLACK);
+
+        rlBegin(RL_TRIANGLES);
+        for (int i = 0; i < segments; i++)
+        {
+            Vector2 pointA = points[i];
+            Vector2 pointB = points[i + 1];
+
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlVertex2f(center.x, center.y);
+            rlVertex2f(pointB.x, pointB.y);
+            rlVertex2f(pointA.x, pointA.y);
+        }
+        rlEnd();
+        break;
+    }
+    case DRAW_GRASS:
+    {
+
+        int bladesCount = data.drawable.metadata.grass.bladeCount;
+        Vector2 basePoints[bladesCount + 1];
+        Vector2 topPoints[bladesCount];
+
+        float *bladeWidths = (float *)data.drawable.computed;
+        Color color = obj.color;
+
+        float width = obj.dimensions.x * scale;
+        float height = obj.dimensions.y * scale;
+
+        basePoints[0] = (Vector2){
+            .x = -width / 2,
+            .y = 0};
+
+        for (int i = 1; i < (bladesCount + 1); i++)
+        {
+            basePoints[i].x = basePoints[i - 1].x + bladeWidths[i - 1] * scale;
+            basePoints[i].y = 0;
+
+            topPoints[i - 1].x = (basePoints[i].x + basePoints[i - 1].x) / 2;
+            topPoints[i - 1].y = -height;
+            DrawLineEx(topPoints[i - 1], basePoints[i], lineThickness, BLACK);
+            DrawLineEx(topPoints[i - 1], basePoints[i - 1], lineThickness, BLACK);
+        }
+
+        DrawLineEx(basePoints[0], basePoints[bladesCount], lineThickness, BLACK);
+
+        rlBegin(RL_TRIANGLES);
+        for (int i = 0; i < bladesCount; i++)
+        {
+            Vector2 pointLeft = basePoints[i];
+            Vector2 pointRight = basePoints[i + 1];
+            Vector2 pointTop = topPoints[i];
+
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlVertex2f(pointLeft.x, pointLeft.y);
+            rlVertex2f(pointRight.x, pointRight.y);
+            rlVertex2f(pointTop.x, pointTop.y);
+        }
+        rlEnd();
+
+        break;
+    }
+    default:
+        break;
+    }
+
+    rlPopMatrix();
 }
 
 void UpdateDrawFrame(void)
@@ -1310,7 +1286,6 @@ void UpdateDrawFrame(void)
         {
             lineThickness *= 3.0f;
         }
-        
 
         Color floorColor = LIME;
         float radiusTill = floorRadius;
@@ -1489,9 +1464,13 @@ void UpdateDrawFrame(void)
             }
         }
 
+        //Draw everything else
         for (int i = 0; i < game.drawableCount; i++)
         {
-            RadialDraw(game.drawables[i]);
+            if (IsKeyDown(KEY_D)) {
+                TraceLog(LOG_INFO, "Drawing at %f", game.drawables[i].atAngle);
+            }
+            DrawAtRadiusAndAngle(game.drawables[i]);
         }
 
         if (game.state == GAME_STATE_STOPPED && !IsKeyDown(KEY_SPACE))
@@ -1542,9 +1521,9 @@ void UpdateDrawFrame(void)
                 .atAngle = 0,
             };
 
-            RadialDraw(wall);
-            RadialDraw(door);
-            RadialDraw(roof);
+            DrawAtRadiusAndAngle(wall);
+            DrawAtRadiusAndAngle(door);
+            DrawAtRadiusAndAngle(roof);
         }
 
         // Draw Player
@@ -1635,6 +1614,32 @@ void UpdateDrawFrame(void)
         if (IsKeyPressed(KEY_S))
         {
             TriggerSharePhoto();
+        }
+        if (IsKeyPressed(KEY_C)) {
+            int worldSize = game.drawableCount * sizeof(RadialDrawable);
+            unsigned char data[worldSize];
+            memcpy(data, game.drawables, game.drawableCount * sizeof(RadialDrawable));
+            int base64Size;
+            char *base64Data = EncodeDataBase64(data, worldSize, &base64Size);
+            SetClipboardText(base64Data);
+            MemFree(base64Data);
+            TraceLog(LOG_INFO, "Copied drawables count %d, %zu", game.drawableCount, sizeof(RadialDrawable));
+        }
+
+        if (IsKeyPressed(KEY_V)) {
+            const char *base64data = GetClipboardText();
+            unsigned char *data;
+            int dataSize;
+            data = DecodeDataBase64(base64data, &dataSize);
+            game.drawableCount = dataSize / sizeof(RadialDrawable);
+            TraceLog(LOG_INFO, "Read drawables count %d, %zu", game.drawableCount, sizeof(RadialDrawable));
+            memcpy(game.drawables, data, game.drawableCount * sizeof(RadialDrawable));
+            for(int i=0; i < game.drawableCount; i++) {
+                PrecomputeDrawable(&game.drawables[i].drawable);
+            }
+            
+            MemFree((char *)base64data);
+            MemFree(data);
         }
         EndDrawing();
     }

@@ -9,16 +9,6 @@
 #include <time.h>
 #include "stb_perlin.h"
 
-#ifndef RANDOM_FLOAT
-
-float randomFloat(float min, float max)
-{
-    return min + (max - min) * ((float)rand() / (float)RAND_MAX);
-}
-
-#define RANDOM_FLOAT
-
-#endif
 
 void DrawTextureInRing(Texture2D texture, Rectangle source, Rectangle dest, Vector2 origin, float rotation, Color tint, float destOffset)
 {
