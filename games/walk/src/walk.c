@@ -114,66 +114,6 @@ typedef struct Player
     float speedInDegreesPerSecond;
 } Player;
 
-typedef enum TreeType
-{
-    TREE_TYPE_RECT = 0,
-    TREE_TYPE_TRIANGLE,
-    TREE_TYPE_CIRCLE
-} TreeType;
-
-typedef struct Tree
-{
-    float width;
-    float height;
-    float canopyHeight;
-    float canopyWidth;
-    float atAngle;
-    TreeType treeType;
-    Color canopyColor;
-    Color trunkColor;
-} Tree;
-
-typedef struct Cloud
-{
-    float width;
-    float height;
-    float floatingHeight;
-    float atAngle;
-    int cloudType;
-} Cloud;
-
-typedef enum BushType
-{
-    BUSH_TYPE_CLOVER = 0,
-    BUSH_TYPE_GRASS,
-} BushType;
-
-typedef struct Bush
-{
-    float size;
-    float halfUnitCount; // grass or bushes
-    int randomSeed;
-    float atAngle;
-    BushType bushType;
-    Color bushColor;
-} Bush;
-
-typedef enum StoneType
-{
-    STONE_TYPE_FIVE = 5,
-    STONE_TYPE_SIX = 6,
-    STONE_TYPE_SEVEN = 7,
-    STONE_TYPE_EIGHT = 8
-} StoneType;
-
-typedef struct Stone
-{
-    float size;
-    float atAngle;
-    float depth;
-    StoneType stoneType;
-} Stone;
-
 typedef struct MileStone
 {
     float size;
@@ -182,18 +122,7 @@ typedef struct MileStone
 
 typedef struct World
 {
-    int treeCount;
-    Tree *trees;
-
-    int cloudCount;
-    Cloud *clouds;
-
-    int bushCount;
-    Bush *bushes;
-
-    int stoneCount;
-    Stone *stones;
-
+    
     int milestoneCount;
     MileStone *milestones;
 
@@ -333,10 +262,7 @@ typedef enum DrawableType
     DRAW_CIRCLE = 0,
     DRAW_TRIANGLE, // Only Isosceles supported
     DRAW_RECTANGLE,
-    DRAW_POLY_5,
-    DRAW_POLY_6,
-    DRAW_POLY_7,
-    DRAW_POLY_8,
+    DRAW_POLY,
     DRAW_CLOUD,
     DRAW_GRASS,
 } DrawableType;
@@ -423,7 +349,6 @@ void DrawablePrecompute(Drawable *drawable)
         float *angleDistribution = (float *)RL_MALLOC((segments) * sizeof(float));
         DistributeRandomly(angleDistribution, segments, angleToCover, 2, 4);
 
-        // TODO: Precompute these
         float startOffset = 0;
         if (angleToCover == 360)
         { // full circle randomize start and end
@@ -438,11 +363,44 @@ void DrawablePrecompute(Drawable *drawable)
         drawable->computed = angles;
         RL_FREE(angleDistribution);
     }
+    if (drawable->type == DRAW_POLY)
+    {
+        SetRandomSeed(drawable->seed);
+        float angleToCover = 360;
+        int segments = drawable->metadata.x;
+
+        float averageAngle = angleToCover / segments;
+        float *angles = (float *)RL_MALLOC((segments + 1) * sizeof(float));
+        float *angleDistribution = (float *)RL_MALLOC((segments) * sizeof(float));
+        DistributeRandomly(angleDistribution, segments, angleToCover, 2, 4);
+        float startOffset = 0;
+        if (angleToCover == 360)
+        { // full circle randomize start and end
+            startOffset = averageAngle * GetRandomValue(500, 800) / 1000.0f;
+        }
+        angles[0] = startOffset;
+        for (int i = 0; i < segments; i++)
+        {
+            angles[i + 1] = angles[i] + angleDistribution[i];
+        }
+        drawable->computed = angles;
+        RL_FREE(angleDistribution);
+    }
+    if (drawable->type == DRAW_GRASS)
+    {
+        SetRandomSeed(drawable->seed);
+        float width = drawable->dimensions.x;
+        float bladesCount = drawable->metadata.x;
+        float *bladeWidths = (float *)RL_MALLOC((bladesCount) * sizeof(float));
+        DistributeRandomly(bladeWidths, bladesCount, width, (width / bladesCount) * 0.8f, (width / bladesCount) * 1.2f);
+        drawable->computed = bladeWidths;
+    }
 }
 
 void FreeDrawable(Drawable drawable)
 {
-    if (drawable.type == DRAW_CLOUD) {
+    if (drawable.type == DRAW_CLOUD)
+    {
         RL_FREE(drawable.computed);
     }
 }
@@ -466,10 +424,11 @@ void RadialDraw(RadialDrawable data)
     case DRAW_CLOUD:
     {
 
+        int angleCovered = data.drawable.metadata.x;
         int segments = data.drawable.metadata.y;
-        Vector2 *points = (Vector2 *)RL_MALLOC((segments + 1) * sizeof(Vector2));
-        float *angles = (float *) obj.computed;
-        
+        Vector2 points[segments + 1];
+        float *angles = (float *)obj.computed;
+
         Color color = obj.color;
         Vector2 center = {0};
         float radiusH = obj.dimensions.x * scale;
@@ -481,6 +440,7 @@ void RadialDraw(RadialDrawable data)
             points[i].y = center.y + sinf(DEG2RAD * angles[i]) * radiusV;
         }
 
+        
         for (int i = 0; i < segments; i++)
         {
             Vector2 pointA = points[i];
@@ -499,13 +459,16 @@ void RadialDraw(RadialDrawable data)
                 toAngle += 360;
             }
 
+            
             DrawCircleSector(pointCenter, cloverRadius, fromAngle, toAngle, 10, obj.color);
-            DrawRing(pointCenter, cloverRadius - lineThickness, cloverRadius, fromAngle, toAngle, 10, BLACK);
+            DrawRing(pointCenter, cloverRadius - lineThickness * 0.8f, cloverRadius, fromAngle - 2.0f, toAngle, 10, BLACK);
         }
 
-        DrawLineEx(points[0], center, lineThickness, BLACK);
-        DrawLineEx(center, points[segments], lineThickness, BLACK);
-
+        if (angleCovered != 360) {
+            DrawLineEx(points[0], center, lineThickness, BLACK);
+            DrawLineEx(center, points[segments], lineThickness, BLACK);
+        }
+        
         rlBegin(RL_TRIANGLES);
         for (int i = 0; i < segments; i++)
         {
@@ -518,6 +481,8 @@ void RadialDraw(RadialDrawable data)
             rlVertex2f(pointA.x, pointA.y);
         }
         rlEnd();
+
+        
 
         break;
     }
@@ -553,28 +518,88 @@ void RadialDraw(RadialDrawable data)
         DrawRectangleLinesEx(rect, lineThickness, lineColor);
         break;
     }
-    case DRAW_POLY_5:
+
+    case DRAW_POLY:
     {
-        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 5, obj.dimensions.x * scale, 0, BLACK);
-        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 5, obj.dimensions.x * scale - lineThickness, 0, obj.color);
+
+        int segments = data.drawable.metadata.x;
+        Vector2 points[segments + 1];
+        float *angles = (float *)obj.computed;
+
+        Color color = obj.color;
+        Vector2 center = {0};
+        float radiusH = obj.dimensions.x * scale;
+        float radiusV = obj.dimensions.y * scale;
+
+        for (int i = 0; i < (segments + 1); i++)
+        {
+            points[i].x = center.x + cosf(DEG2RAD * angles[i]) * radiusH;
+            points[i].y = center.y + sinf(DEG2RAD * angles[i]) * radiusV;
+            if (i > 0)
+            {
+                DrawLineEx(points[i], points[i - 1], lineThickness, BLACK);
+            }
+        }
+        DrawLineEx(points[0], points[segments], lineThickness, BLACK);
+
+        rlBegin(RL_TRIANGLES);
+        for (int i = 0; i < segments; i++)
+        {
+            Vector2 pointA = points[i];
+            Vector2 pointB = points[i + 1];
+
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlVertex2f(center.x, center.y);
+            rlVertex2f(pointB.x, pointB.y);
+            rlVertex2f(pointA.x, pointA.y);
+        }
+        rlEnd();
         break;
     }
-    case DRAW_POLY_6:
+    case DRAW_GRASS:
     {
-        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 6, obj.dimensions.x * scale, 0, BLACK);
-        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 6, obj.dimensions.x * scale - lineThickness, 0, obj.color);
-        break;
-    }
-    case DRAW_POLY_7:
-    {
-        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 7, obj.dimensions.x * scale, 0, BLACK);
-        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 7, obj.dimensions.x * scale - lineThickness, 0, obj.color);
-        break;
-    }
-    case DRAW_POLY_8:
-    {
-        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 8, obj.dimensions.x * scale, 0, BLACK);
-        DrawPoly((Vector2){0, -obj.dimensions.x * scale}, 8, obj.dimensions.x * scale - lineThickness, 0, obj.color);
+
+        int bladesCount = data.drawable.metadata.x;
+        Vector2 basePoints[bladesCount + 1];
+        Vector2 topPoints[bladesCount];
+
+        float *bladeWidths = (float *)data.drawable.computed;
+        Color color = obj.color;
+
+        float width = obj.dimensions.x * scale;
+        float height = obj.dimensions.y * scale;
+
+        basePoints[0] = (Vector2){
+            .x = -width / 2,
+            .y = 0};
+
+        for (int i = 1; i < (bladesCount + 1); i++)
+        {
+            basePoints[i].x = basePoints[i - 1].x + bladeWidths[i - 1] * scale;
+            basePoints[i].y = 0;
+
+            topPoints[i - 1].x = (basePoints[i].x + basePoints[i - 1].x) / 2;
+            topPoints[i - 1].y = -height;
+            DrawLineEx(topPoints[i - 1], basePoints[i], lineThickness, BLACK);
+            DrawLineEx(topPoints[i - 1], basePoints[i - 1], lineThickness, BLACK);
+        }
+
+        DrawLineEx(basePoints[0], basePoints[bladesCount], lineThickness, BLACK);
+
+        rlBegin(RL_TRIANGLES);
+        for (int i = 0; i < bladesCount; i++)
+        {
+            Vector2 pointLeft = basePoints[i];
+            Vector2 pointRight = basePoints[i + 1];
+            Vector2 pointTop = topPoints[i];
+
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlVertex2f(pointLeft.x, pointLeft.y);
+            rlVertex2f(pointRight.x, pointRight.y);
+            rlVertex2f(pointTop.x, pointTop.y);
+        }
+        rlEnd();
+
         break;
     }
     default:
@@ -737,35 +762,49 @@ void GenerateClouds(Game *game)
 
 void GenerateBushes(Game *game)
 {
-    World *world = &game->world;
-    world->bushCount = game->config.world.bushCount;
-    world->bushes = (Bush *)malloc(world->bushCount * sizeof(Bush));
-    float averageAngleBetweenBushes = 360.0f / world->bushCount;
 
-    for (int i = 0; i < world->bushCount; i++)
+    float averageAngleBetween = 360.0f / game->config.world.bushCount;
+
+    int drawableCount = game->drawableCount;
+    game->drawableCount += game->config.world.bushCount;
+    int bushTypes[] = {DRAW_CLOUD, DRAW_GRASS, DRAW_GRASS};
+    for (int i = 0; i < game->config.world.bushCount; i++)
     {
-
-        world->bushes[i].randomSeed = randomInt(0, INT32_MAX);
-        world->bushes[i].atAngle = randomFloat(averageAngleBetweenBushes * i, averageAngleBetweenBushes * (i + 1));
-        world->bushes[i].bushType = randomInt(BUSH_TYPE_CLOVER, BUSH_TYPE_GRASS);
-        switch (world->bushes[i].bushType)
+        DrawableType bushType = GetRandomInt(3, bushTypes);
+        switch (bushType)
         {
-        case BUSH_TYPE_CLOVER:
+        case DRAW_CLOUD:
         {
-            int halfUnitOptions[] = {1, 1, 1, 1, 2};
-            world->bushes[i].halfUnitCount = GetRandomInt(5, halfUnitOptions);
-            world->bushes[i].size = randomFloat(1.7f, 4.0f);
+            game->drawables[drawableCount + i] = (RadialDrawable){
+                .atAngle = randomFloat(averageAngleBetween * i, averageAngleBetween * (i + 1)),
+                .atRadiusOffset = 0,
+                .drawable = {
+                    .seed = randomInt(0, INT32_MAX),
+                    .metadata.x = 180,
+                    .metadata.y = randomInt(3, 6),
+                    .type = DRAW_CLOUD,
+                    .color = LIME,
+                    .dimensions = {.x = randomFloat(1.6f, 3.9f), .y = randomFloat(1.5f, 3.2f)}}};
+            DrawablePrecompute(&game->drawables[drawableCount + i].drawable);
             break;
         }
-        case BUSH_TYPE_GRASS:
-            world->bushes[i].halfUnitCount = randomInt(1, 4);
-            world->bushes[i].size = randomFloat(0.9f, 4.2f);
+        case DRAW_GRASS:
+        {
+            game->drawables[drawableCount + i] = (RadialDrawable){
+                .atAngle = randomFloat(averageAngleBetween * i, averageAngleBetween * (i + 1)),
+                .atRadiusOffset = 0,
+                .drawable = {
+                    .seed = randomInt(0, INT32_MAX),
+                    .metadata.x = randomInt(4, 6),
+                    .type = DRAW_GRASS,
+                    .color = LIME,
+                    .dimensions = {.x = randomFloat(1.6f, 3.2f), .y = randomFloat(1.5f, 2.2f)}}};
+            DrawablePrecompute(&game->drawables[drawableCount + i].drawable);
             break;
+        }
         default:
-            break;
+        break;
         }
-        Color bushColors[] = {GREEN, LIME, LIME, LIME, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN};
-        world->bushes[i].bushColor = GetRandomColor(10, bushColors);
     }
 }
 
@@ -775,15 +814,20 @@ void GenerateStones(Game *game)
 
     int drawableCount = game->drawableCount;
     game->drawableCount += game->config.world.stoneCount;
+    int cornerDistribution[] = {5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 7, 7, 8, 8};
     for (int i = 0; i < game->config.world.stoneCount; i++)
     {
+        float width = randomFloat(0.5f, 1.4f);
         game->drawables[drawableCount + i] = (RadialDrawable){
             .atAngle = randomFloat(averageAngleBetweenStones * i, averageAngleBetweenStones * (i + 1)),
-            .atRadiusOffset = -randomFloat(1.85f, 9.4f),
+            .atRadiusOffset = -randomFloat(1.25f, 9.4f),
             .drawable = {
-                .type = randomInt(DRAW_POLY_5, DRAW_POLY_8),
+                .type = DRAW_POLY,
+                .metadata = {
+                    .x = GetRandomInt(16, cornerDistribution)},
                 .color = DARKGRAY,
-                .dimensions = {.x = randomFloat(0.5f, 1.4f)}}};
+                .dimensions = {.x = width, .y = width * randomFloat(0.9f, 1.0f)}}};
+        DrawablePrecompute(&game->drawables[drawableCount + i].drawable);
     }
 }
 
@@ -803,7 +847,8 @@ void GenerateMileStones(Game *game)
 
 void GenerateWorld(Game *game)
 {
-    for (int i=0; i < game->drawableCount; i++) {
+    for (int i = 0; i < game->drawableCount; i++)
+    {
         FreeDrawable(game->drawables[i].drawable);
     }
     game->drawableCount = 0;
@@ -818,10 +863,6 @@ void GenerateWorld(Game *game)
 void FreeGame(Game *game)
 {
     World world = game->world;
-    free(world.trees);
-    free(world.clouds);
-    free(world.bushes);
-    free(world.stones);
     free(world.milestones);
 }
 
@@ -916,7 +957,7 @@ void InitConfig(Game *game, int width, int height, float dpi, bool isLandscape)
         game->config.world.treeCount = 45;
         game->config.world.cloudCount = 30;
         game->config.world.bushCount = 40;
-        game->config.world.stoneCount = 65;
+        game->config.world.stoneCount = 265;
         game->config.world.milestoneCount = 0;
     }
 
@@ -1269,99 +1310,13 @@ void UpdateDrawFrame(void)
         {
             lineThickness *= 3.0f;
         }
-        int segments = 36;
+        
 
         Color floorColor = LIME;
         float radiusTill = floorRadius;
         float radiusFrom = floorRadius;
         float floorBorderThickness = game.display.lineThicknessFactor * 7.0f;
         float floorSeperatorThickness = game.display.lineThicknessFactor * 4.0f;
-        // Draw Bushes
-        {
-            for (int i = 0; i < game.world.bushCount; i++)
-            {
-
-                Bush *bushes = game.world.bushes;
-
-                switch (bushes[i].bushType)
-                {
-                case BUSH_TYPE_CLOVER:
-                {
-
-                    float bushSize = bushes[i].size * pixelsPerUnit;
-                    int halfUnitCount = bushes[i].halfUnitCount;
-                    SetRandomSeed(bushes[i].randomSeed);
-                    float offsetHeight = GetRandomValue(30, 50) / 100.0f;
-                    float offsetBetweenUnits = GetRandomValue(90, 120) / 100.0f;
-                    float scaleRadius = GetRandomValue(60, 70) / 100.0f;
-
-                    float radius = floorRadius - bushSize * offsetHeight;
-                    float bushX = radius * sinf(bushes[i].atAngle * DEG2RAD);
-                    float bushY = -radius * cosf(bushes[i].atAngle * DEG2RAD);
-
-                    DrawCircleSector((Vector2){bushX, bushY}, bushSize, 0, 360, segments, bushes[i].bushColor);
-                    DrawRing((Vector2){bushX, bushY}, bushSize, bushSize + lineThickness, 0, 360, segments, BLACK);
-                    float bushRadius = bushSize * scaleRadius;
-                    for (int j = 0; j < halfUnitCount; j++)
-                    {
-                        radius = floorRadius - bushRadius * offsetHeight;
-                        bushX = radius * sinf(bushes[i].atAngle * DEG2RAD);
-                        bushY = -radius * cosf(bushes[i].atAngle * DEG2RAD);
-
-                        DrawCircleSector((Vector2){bushX - bushSize * (j + 1) * offsetBetweenUnits * cosf(bushes[i].atAngle * DEG2RAD), bushY - bushSize * (j + 1) * offsetBetweenUnits * sinf(bushes[i].atAngle * DEG2RAD)}, bushRadius, 0, 360, segments, bushes[i].bushColor);
-                        DrawRing((Vector2){bushX - bushSize * (j + 1) * offsetBetweenUnits * cosf(bushes[i].atAngle * DEG2RAD), bushY - bushSize * (j + 1) * offsetBetweenUnits * sinf(bushes[i].atAngle * DEG2RAD)}, bushRadius, bushRadius + lineThickness, 0, 360, segments, BLACK);
-
-                        DrawCircleSector((Vector2){bushX + bushSize * (j + 1) * offsetBetweenUnits * cosf(bushes[i].atAngle * DEG2RAD), bushY + bushSize * (j + 1) * offsetBetweenUnits * sinf(bushes[i].atAngle * DEG2RAD)}, bushRadius, 0, 360, segments, bushes[i].bushColor);
-                        DrawRing((Vector2){bushX + bushSize * (j + 1) * offsetBetweenUnits * cosf(bushes[i].atAngle * DEG2RAD), bushY + bushSize * (j + 1) * offsetBetweenUnits * sinf(bushes[i].atAngle * DEG2RAD)}, bushRadius, bushRadius + lineThickness, 0, 360, segments, BLACK);
-                        bushRadius *= scaleRadius;
-                    }
-                }
-                break;
-                case BUSH_TYPE_GRASS:
-                {
-                    float bushSize = bushes[i].size * pixelsPerUnit;
-                    int halfUnitCount = bushes[i].halfUnitCount;
-                    SetRandomSeed(bushes[i].randomSeed);
-                    float offsetBetweenUnits = GetRandomValue(125, 145) / 100.0f;
-                    float scaleHeight = GetRandomValue(90, 130) / 100.0f;
-                    float ratioOfHeight = GetRandomValue(5, 24) / 100.0f;
-                    float radius = floorRadius - bushSize * 0.25f;
-                    float bushX = radius * sinf(bushes[i].atAngle * DEG2RAD);
-                    float bushY = -radius * cosf(bushes[i].atAngle * DEG2RAD);
-
-                    Vector2 bushCenter = {bushX, bushY};
-                    float bladeSize = bushSize * ratioOfHeight;
-                    for (int j = -halfUnitCount; j <= halfUnitCount; j++)
-                    {
-                        Vector2 bladeCenter = Vector2Add(bushCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), (j)*bladeSize * 2 * offsetBetweenUnits));
-                        Vector2 bladeLeft = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), bladeSize));
-                        Vector2 bladeRight = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), -bladeSize));
-                        Vector2 bladeTop = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){0, -1}, bushes[i].atAngle * DEG2RAD), bushSize));
-
-                        DrawTriangle(bladeLeft, bladeRight, bladeTop, bushes[i].bushColor);
-                        DrawLineEx(bladeLeft, bladeTop, lineThickness * 0.6f, BLACK);
-                        DrawLineEx(bladeRight, bladeTop, lineThickness * 0.6f, BLACK);
-                    }
-                    bushSize = bushSize * scaleHeight;
-                    for (int j = -halfUnitCount; j <= halfUnitCount; j++)
-                    {
-
-                        Vector2 bladeCenter = Vector2Add(bushCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), (j - 0.5f) * bladeSize * 2 * offsetBetweenUnits));
-                        Vector2 bladeLeft = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), bladeSize));
-                        Vector2 bladeRight = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){-1, 0}, bushes[i].atAngle * DEG2RAD), -bladeSize));
-                        Vector2 bladeTop = Vector2Add(bladeCenter, Vector2Scale(Vector2Rotate((Vector2){0, -1}, bushes[i].atAngle * DEG2RAD), bushSize));
-
-                        DrawTriangle(bladeLeft, bladeRight, bladeTop, bushes[i].bushColor);
-                        DrawLineEx(bladeLeft, bladeTop, lineThickness * 0.6f, BLACK);
-                        DrawLineEx(bladeRight, bladeTop, lineThickness * 0.6f, BLACK);
-                    }
-                }
-
-                default:
-                    break;
-                }
-            }
-        }
 
         // Draw Milestones
         if (game.display.cameraInUse == &game.display.playerCamera)
@@ -1539,7 +1494,7 @@ void UpdateDrawFrame(void)
             RadialDraw(game.drawables[i]);
         }
 
-        if (game.display.cameraInUse == &game.display.worldCamera && !IsKeyDown(KEY_SPACE))
+        if (game.state == GAME_STATE_STOPPED && !IsKeyDown(KEY_SPACE))
         {
             for (int i = game.world.viewlineCount - 1; i >= 0; i -= 1)
             {
@@ -1572,7 +1527,7 @@ void UpdateDrawFrame(void)
         {
 
             RadialDrawable wall = {
-                .drawable = {.type = DRAW_RECTANGLE, .color = BROWN, .dimensions = {.x = 6.0f, .y = 4.0f}},
+                .drawable = {.type = DRAW_RECTANGLE, .color = BROWN, .dimensions = {.x = 4.0f, .y = 3.0f}},
                 .atRadiusOffset = 0,
                 .atAngle = 0,
             };
@@ -1582,7 +1537,7 @@ void UpdateDrawFrame(void)
                 .atAngle = 0,
             };
             RadialDrawable roof = {
-                .drawable = {.type = DRAW_TRIANGLE, .color = DARKBROWN, .dimensions = {.x = 9.0f, .y = 3.0f}},
+                .drawable = {.type = DRAW_TRIANGLE, .color = DARKBROWN, .dimensions = {.x = 6.0f, .y = 2.0f}},
                 .atRadiusOffset = wall.drawable.dimensions.y,
                 .atAngle = 0,
             };
