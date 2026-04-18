@@ -348,6 +348,7 @@ typedef struct Drawable
     Vector2 metadata;
     int seed;
     Color color;
+    void *computed;
 } Drawable;
 
 typedef struct RadialDrawable
@@ -389,6 +390,63 @@ float AngleByLine(Vector2 center, Vector2 point)
     return angle < 0 ? 360 + angle : angle;
 }
 
+void DistributeRandomly(float *result, int count, float sum, float min, float max)
+{
+
+    float total = 0;
+    for (int i = 0; i < count; i++)
+    {
+        result[i] = GetRandomValue(min * 100000 / sum, max * 100000 / sum) / 100000.0f;
+        total += result[i];
+    }
+
+    float scaleBy = sum / total;
+    for (int i = 0; i < count; i++)
+    {
+        result[i] *= scaleBy;
+    }
+}
+
+void DrawablePrecompute(Drawable *drawable)
+{
+    if (drawable->type == DRAW_CLOUD)
+    {
+        SetRandomSeed(drawable->seed);
+        float angleToCover = drawable->metadata.x;
+        int segments = drawable->metadata.y;
+        float startAngle = 270 - (angleToCover) / 2;
+        float endAngle = 270 + (angleToCover) / 2;
+        float averageAngle = angleToCover / segments;
+
+        float *angles = (float *)RL_MALLOC((segments + 1) * sizeof(float));
+
+        float *angleDistribution = (float *)RL_MALLOC((segments) * sizeof(float));
+        DistributeRandomly(angleDistribution, segments, angleToCover, 2, 4);
+
+        // TODO: Precompute these
+        float startOffset = 0;
+        if (angleToCover == 360)
+        { // full circle randomize start and end
+            startOffset = averageAngle * GetRandomValue(500, 800) / 1000.0f;
+        }
+        angles[0] = startAngle + startOffset;
+        angles[segments] = endAngle + startOffset;
+        for (int i = 0; i < segments; i++)
+        {
+            angles[i + 1] = angles[i] + angleDistribution[i];
+        }
+        drawable->computed = angles;
+        RL_FREE(angleDistribution);
+    }
+}
+
+void FreeDrawable(Drawable drawable)
+{
+    if (drawable.type == DRAW_CLOUD) {
+        RL_FREE(drawable.computed);
+    }
+}
+
 void RadialDraw(RadialDrawable data)
 {
 
@@ -408,28 +466,10 @@ void RadialDraw(RadialDrawable data)
     case DRAW_CLOUD:
     {
 
-        SetRandomSeed(obj.seed);
-        float angleToCover = obj.metadata.x;
-        int segments = obj.metadata.y;
-        float startAngle = 270 - (angleToCover) / 2;
-        float endAngle = 270 + (angleToCover) / 2;
-        float averageAngle = angleToCover / segments;
-
-        
-        float *angles = (float *)RL_MALLOC((segments + 1) * sizeof(float));
-    
-        //TODO: Precompute these
-        //TODO: Randomize start and end if full cirlce
-        angles[0] = startAngle;
-        angles[segments] = endAngle;
-        for (int i = 1; i < segments; i++)
-        {
-            float angleVariation = GetRandomValue(700, 1300) / 1000.0f;
-            angles[i] = angles[i - 1] + averageAngle * angleVariation;
-        }
+        int segments = data.drawable.metadata.y;
         Vector2 *points = (Vector2 *)RL_MALLOC((segments + 1) * sizeof(Vector2));
-
-        // Randomize
+        float *angles = (float *) obj.computed;
+        
         Color color = obj.color;
         Vector2 center = {0};
         float radiusH = obj.dimensions.x * scale;
@@ -623,7 +663,7 @@ void GenerateTrees(Game *game)
 
     Color trunkColors[] = {BROWN, BROWN, DARKBROWN, DARKBROWN, DARKBROWN};
     Color canopyColors[] = {GREEN, LIME, LIME, LIME, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN, DARKGREEN};
-    int canopyTypes[] = {DRAW_CIRCLE, DRAW_CLOUD, DRAW_RECTANGLE, DRAW_RECTANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE};
+    int canopyTypes[] = {DRAW_CIRCLE, DRAW_CIRCLE, DRAW_RECTANGLE, DRAW_RECTANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE, DRAW_TRIANGLE};
 
     for (int i = 0; i < game->config.world.treeCount; i++)
     {
@@ -653,7 +693,7 @@ void GenerateTrees(Game *game)
             canopy.drawable.dimensions.y = randomFloat(6.0f, 10.0f);
             canopy.drawable.seed = randomInt(0, INT32_MAX);
             canopy.drawable.metadata.x = 180;
-            canopy.drawable.metadata.y = randomInt(3,6);
+            canopy.drawable.metadata.y = randomInt(3, 6);
             break;
         default:
             break;
@@ -687,10 +727,11 @@ void GenerateClouds(Game *game)
             .drawable = {
                 .seed = randomInt(0, INT32_MAX),
                 .metadata.x = 360,
-                .metadata.y = randomInt(6, 16),
+                .metadata.y = randomInt(8, 16),
                 .type = DRAW_CLOUD,
                 .color = LIGHTGRAY,
                 .dimensions = {.x = randomFloat(5, 15), .y = randomFloat(4, 6)}}};
+        DrawablePrecompute(&game->drawables[drawableCount + i].drawable);
     }
 }
 
@@ -762,6 +803,9 @@ void GenerateMileStones(Game *game)
 
 void GenerateWorld(Game *game)
 {
+    for (int i=0; i < game->drawableCount; i++) {
+        FreeDrawable(game->drawables[i].drawable);
+    }
     game->drawableCount = 0;
 
     GenerateClouds(game);
@@ -925,6 +969,7 @@ void InitGame(Game *game, int width, int height, float dpi, bool isLandscape)
         game->display.cameraInUse = &game->display.playerCamera;
     }
 
+    game->drawableCount = 0;
     GenerateWorld(game);
 }
 

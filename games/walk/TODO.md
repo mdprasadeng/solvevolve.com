@@ -19,14 +19,9 @@
 * abstraction for interacting things position
 
 
-const canvas = document.getElementById('canvas');
-const link = document.createElement('a');
-link.download = 'my-image.png';
-link.href = canvas.toDataURL('image/png');
-link.click();
 
 #In Future
-* 
+* Use emoji for stuff like footsteps like noto emoji
 
 //correct
 INFO: Pixels per unit: 70
