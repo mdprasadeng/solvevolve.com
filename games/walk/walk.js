@@ -9264,49 +9264,49 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp('fetchSettings');
 }
 var ASM_CONSTS = {
-  94803: () => { if (document.fullscreenElement) return 1; },  
- 94849: () => { return Module.canvas.width; },  
- 94881: () => { return parseInt(Module.canvas.style.width); },  
- 94929: () => { document.exitFullscreen(); },  
- 94956: () => { setTimeout(function(){ Module.requestFullscreen(false, false); }, 100); },  
- 95028: () => { if (document.fullscreenElement) return 1; },  
- 95074: () => { return Module.canvas.width; },  
- 95106: () => { return screen.width; },  
- 95131: () => { document.exitFullscreen(); },  
- 95158: () => { setTimeout(function() { Module.requestFullscreen(false, true); setTimeout(function() { canvas.style.width="unset"; }, 100); }, 100); },  
- 95291: () => { return window.innerWidth; },  
- 95317: () => { return window.innerHeight; },  
- 95344: () => { if (document.fullscreenElement) return 1; },  
- 95390: () => { return Module.canvas.width; },  
- 95422: () => { return parseInt(Module.canvas.style.width); },  
- 95470: () => { if (document.fullscreenElement) return 1; },  
- 95516: () => { return Module.canvas.width; },  
- 95548: () => { return screen.width; },  
- 95573: () => { return window.innerWidth; },  
- 95599: () => { return window.innerHeight; },  
- 95626: () => { if (document.fullscreenElement) return 1; },  
- 95672: () => { return Module.canvas.width; },  
- 95704: () => { return screen.width; },  
- 95729: () => { document.exitFullscreen(); },  
- 95756: () => { if (document.fullscreenElement) return 1; },  
- 95802: () => { return Module.canvas.width; },  
- 95834: () => { return parseInt(Module.canvas.style.width); },  
- 95882: () => { document.exitFullscreen(); },  
- 95909: ($0) => { Module.canvas.style.opacity = $0; },  
- 95947: () => { return screen.width; },  
- 95972: () => { return screen.height; },  
- 95998: () => { return window.screenX; },  
- 96025: () => { return window.screenY; },  
- 96052: () => { return window.devicePixelRatio; },  
- 96088: ($0) => { navigator.clipboard.writeText(UTF8ToString($0)); },  
- 96141: ($0) => { Module.canvas.style.cursor = UTF8ToString($0); },  
- 96192: () => { Module.canvas.style.cursor = 'none'; },  
- 96229: ($0, $1, $2, $3) => { try { navigator.getGamepads()[$0].vibrationActuator.playEffect('dual-rumble', { startDelay: 0, duration: $3, weakMagnitude: $1, strongMagnitude: $2 }); } catch (e) { try { navigator.getGamepads()[$0].hapticActuators[0].pulse($2, $3); } catch (e) { } } },  
- 96485: ($0) => { Module.canvas.style.cursor = UTF8ToString($0); },  
- 96536: () => { if (document.pointerLockElement) return 1; },  
- 96583: () => { if (document.fullscreenElement) return 1; },  
- 96629: () => { return window.innerWidth; },  
- 96655: () => { return window.innerHeight; }
+  103747: () => { if (document.fullscreenElement) return 1; },  
+ 103793: () => { return Module.canvas.width; },  
+ 103825: () => { return parseInt(Module.canvas.style.width); },  
+ 103873: () => { document.exitFullscreen(); },  
+ 103900: () => { setTimeout(function(){ Module.requestFullscreen(false, false); }, 100); },  
+ 103972: () => { if (document.fullscreenElement) return 1; },  
+ 104018: () => { return Module.canvas.width; },  
+ 104050: () => { return screen.width; },  
+ 104075: () => { document.exitFullscreen(); },  
+ 104102: () => { setTimeout(function() { Module.requestFullscreen(false, true); setTimeout(function() { canvas.style.width="unset"; }, 100); }, 100); },  
+ 104235: () => { return window.innerWidth; },  
+ 104261: () => { return window.innerHeight; },  
+ 104288: () => { if (document.fullscreenElement) return 1; },  
+ 104334: () => { return Module.canvas.width; },  
+ 104366: () => { return parseInt(Module.canvas.style.width); },  
+ 104414: () => { if (document.fullscreenElement) return 1; },  
+ 104460: () => { return Module.canvas.width; },  
+ 104492: () => { return screen.width; },  
+ 104517: () => { return window.innerWidth; },  
+ 104543: () => { return window.innerHeight; },  
+ 104570: () => { if (document.fullscreenElement) return 1; },  
+ 104616: () => { return Module.canvas.width; },  
+ 104648: () => { return screen.width; },  
+ 104673: () => { document.exitFullscreen(); },  
+ 104700: () => { if (document.fullscreenElement) return 1; },  
+ 104746: () => { return Module.canvas.width; },  
+ 104778: () => { return parseInt(Module.canvas.style.width); },  
+ 104826: () => { document.exitFullscreen(); },  
+ 104853: ($0) => { Module.canvas.style.opacity = $0; },  
+ 104891: () => { return screen.width; },  
+ 104916: () => { return screen.height; },  
+ 104942: () => { return window.screenX; },  
+ 104969: () => { return window.screenY; },  
+ 104996: () => { return window.devicePixelRatio; },  
+ 105032: ($0) => { navigator.clipboard.writeText(UTF8ToString($0)); },  
+ 105085: ($0) => { Module.canvas.style.cursor = UTF8ToString($0); },  
+ 105136: () => { Module.canvas.style.cursor = 'none'; },  
+ 105173: ($0, $1, $2, $3) => { try { navigator.getGamepads()[$0].vibrationActuator.playEffect('dual-rumble', { startDelay: 0, duration: $3, weakMagnitude: $1, strongMagnitude: $2 }); } catch (e) { try { navigator.getGamepads()[$0].hapticActuators[0].pulse($2, $3); } catch (e) { } } },  
+ 105429: ($0) => { Module.canvas.style.cursor = UTF8ToString($0); },  
+ 105480: () => { if (document.pointerLockElement) return 1; },  
+ 105527: () => { if (document.fullscreenElement) return 1; },  
+ 105573: () => { return window.innerWidth; },  
+ 105599: () => { return window.innerHeight; }
 };
 function EM_JS_ShareImage(fileName) { (async () => { try { const name = UTF8ToString(fileName); const data = FS.readFile(name); const file = new File([data], name, { type: 'image/png' }); const shareData = { files: [file], title: 'Image Share', text: 'Shared from Emscripten' }; if (navigator.canShare && navigator.canShare(shareData)) { await navigator.share(shareData); } else { console.error("Web Share not supported on this browser."); } } catch (err) { console.error("Share failed:", err); } })(); }
 function EM_JS_DownloadImage(fileName) { try { const name = UTF8ToString(fileName); const data = FS.readFile(name); const blob = new Blob([data], { type: 'image/png' }); const url = window.URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = name; document.body.appendChild(link); link.click(); document.body.removeChild(link); window.URL.revokeObjectURL(url); console.log("Download triggered for:", name); } catch(e) { console.error("Failed to download file from VFS:", e); } }
@@ -9314,8 +9314,8 @@ function EM_JS_ShareSupported() {return !!navigator.canShare}
 function SetCanvasIdJs(out,outSize) { var canvasId = "#" + Module.canvas.id; stringToUTF8(canvasId, out, outSize); }
 
 // Imports from the Wasm binary.
-var _malloc = makeInvalidEarlyAccess('_malloc');
 var _free = makeInvalidEarlyAccess('_free');
+var _malloc = makeInvalidEarlyAccess('_malloc');
 var _main = Module['_main'] = makeInvalidEarlyAccess('_main');
 var _fflush = makeInvalidEarlyAccess('_fflush');
 var _emscripten_stack_get_end = makeInvalidEarlyAccess('_emscripten_stack_get_end');
@@ -9332,8 +9332,8 @@ var wasmMemory = makeInvalidEarlyAccess('wasmMemory');
 var wasmTable = makeInvalidEarlyAccess('wasmTable');
 
 function assignWasmExports(wasmExports) {
-  assert(typeof wasmExports['malloc'] != 'undefined', 'missing Wasm export: malloc');
   assert(typeof wasmExports['free'] != 'undefined', 'missing Wasm export: free');
+  assert(typeof wasmExports['malloc'] != 'undefined', 'missing Wasm export: malloc');
   assert(typeof wasmExports['main'] != 'undefined', 'missing Wasm export: main');
   assert(typeof wasmExports['fflush'] != 'undefined', 'missing Wasm export: fflush');
   assert(typeof wasmExports['emscripten_stack_get_end'] != 'undefined', 'missing Wasm export: emscripten_stack_get_end');
@@ -9346,8 +9346,8 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['emscripten_stack_get_current'] != 'undefined', 'missing Wasm export: emscripten_stack_get_current');
   assert(typeof wasmExports['memory'] != 'undefined', 'missing Wasm export: memory');
   assert(typeof wasmExports['__indirect_function_table'] != 'undefined', 'missing Wasm export: __indirect_function_table');
-  _malloc = createExportWrapper('malloc', 1);
   _free = createExportWrapper('free', 1);
+  _malloc = createExportWrapper('malloc', 1);
   _main = Module['_main'] = createExportWrapper('main', 2);
   _fflush = createExportWrapper('fflush', 1);
   _emscripten_stack_get_end = wasmExports['emscripten_stack_get_end'];

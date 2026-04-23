@@ -562,18 +562,18 @@ void GenerateWorld(Game *game)
     GenerateBushes(game);
     GenerateStones(game);
     GenerateMileStones(game);
-    RadialDrawable footSteps = {
-        .atAngle = 0,
-        .atRadiusOffset = -16,
+    // RadialDrawable footSteps = {
+    //     .atAngle = 0,
+    //     .atRadiusOffset = -16,
         
-        .drawable = {
-            .type = DRAW_FOOTSTEPS,
-            .dimensions = {
-                .x = 12,
-                .y = 12},
-            .color = WHITE,
-        }};
-    AddToRadialDrawables(game, footSteps);
+    //     .drawable = {
+    //         .type = DRAW_FOOTSTEPS,
+    //         .dimensions = {
+    //             .x = 12,
+    //             .y = 12},
+    //         .color = WHITE,
+    //     }};
+    // AddToRadialDrawables(game, footSteps);
 }
 
 void FreeGame(Game *game)
@@ -1592,7 +1592,7 @@ void UpdateDrawFrame(void)
         }
 
         // Draw House
-        if (false && game.state != GAME_STATE_STOPPED)
+        if (game.state != GAME_STATE_STOPPED)
         {
 
             RadialDrawable wall = {
@@ -1785,16 +1785,16 @@ void TriggerSharePhoto()
 
 char *SerializeWorld(Game *game, int *dataSize)
 {
-    int sizeNeeded = 0;
-    for (int i = 0; i < game->drawableCount; i++)
-    {
-        // RadialDrawable rd = game->drawables[i];
-        // rd.atAngle
-        sizeNeeded += 2; //(0-360)
+    // int sizeNeeded = 0;
+    // for (int i = 0; i < game->drawableCount; i++)
+    // {
+    //     // RadialDrawable rd = game->drawables[i];
+    //     // rd.atAngle
+    //     sizeNeeded += 2; //(0-360)
 
-        // rd.atRadiusOffset
-        sizeNeeded += 1; // (-1.)
-    }
+    //     // rd.atRadiusOffset
+    //     sizeNeeded += 1; // (-1.)
+    // }
 
     return "fdsasda";
 }
