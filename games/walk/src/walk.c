@@ -264,6 +264,7 @@ typedef enum DrawableType
     DRAW_POLY,
     DRAW_CLOUD,
     DRAW_GRASS,
+    DRAW_FOOTSTEPS,
 } DrawableType;
 
 typedef struct PolyData
@@ -305,6 +306,7 @@ typedef struct RadialDrawable
 {
     float atRadiusOffset;
     float atAngle;
+    float rotateBy;
     Drawable drawable;
 } RadialDrawable;
 
@@ -323,12 +325,15 @@ typedef struct Game
 #pragma endregion
 
 Game game = {0};
+Font emojiFont;
 
 #pragma region func definitions
 void InitGame(Game *game, int width, int height, float dpi, bool isLandscape);
 void FreeGame(Game *game);
 void UpdateDrawFrame(void);
 void TriggerSharePhoto();
+char *SerializeWorld(Game *game, int *dataSize);
+void LoadWorld(char *worldData, int dataSize);
 
 #pragma endregion
 
@@ -338,6 +343,7 @@ int main(void)
     int width, height;
     float dpi;
     bool isLandscape = false;
+
 #ifdef PLATFORM_WEB
     width = emscripten_run_script_int("window.innerWidth");
     height = emscripten_run_script_int("window.innerHeight");
@@ -355,6 +361,10 @@ int main(void)
     SetConfigFlags(FLAG_VSYNC_HINT);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(width, height, "Walk");
+    const int emojisNeeded[] = {0x1F600, 0x2764, 0x1F332, 0x2601, 0x1FAA8, 0x1FAB5, 0x1F463};
+    // char *emojis = "😀❤️🌲☁🪨,🪵👣";
+    emojiFont = LoadFontEx("./NotoEmoji-Regular.ttf", 512, emojisNeeded, 1);
+
     InitGame(&game, width, height, dpi, isLandscape);
 
 #if defined(PLATFORM_WEB)
@@ -552,6 +562,18 @@ void GenerateWorld(Game *game)
     GenerateBushes(game);
     GenerateStones(game);
     GenerateMileStones(game);
+    RadialDrawable footSteps = {
+        .atAngle = 0,
+        .atRadiusOffset = -16,
+        
+        .drawable = {
+            .type = DRAW_FOOTSTEPS,
+            .dimensions = {
+                .x = 12,
+                .y = 12},
+            .color = WHITE,
+        }};
+    AddToRadialDrawables(game, footSteps);
 }
 
 void FreeGame(Game *game)
@@ -708,7 +730,7 @@ void InitGame(Game *game, int width, int height, float dpi, bool isLandscape)
     GenerateWorld(game);
 }
 
-char *start = "Tap and Hold to START";
+char *start = "😀";
 char *stop = "Tap and Hold to FINISH";
 char *wait = "Tap and Hold to OBSERVE";
 
@@ -813,12 +835,67 @@ void DrawAtRadiusAndAngle(RadialDrawable data)
 
     rlPushMatrix();
     rlTranslatef(atRadius * sinf(data.atAngle * DEG2RAD), -atRadius * cosf(data.atAngle * DEG2RAD), 0);
-    rlRotatef(data.atAngle, 0, 0, 1);
+    rlRotatef(data.atAngle + data.rotateBy, 0, 0, 1);
 
     Drawable obj = data.drawable;
 
     switch (obj.type)
     {
+    case DRAW_FOOTSTEPS:
+    {
+
+        float width = obj.dimensions.x * scale;
+        float height = obj.dimensions.y * scale;
+        float heelOffsetX = width * 0.1f;
+        float heelOffsetY = height * 0.1f;
+        float footWidth = width * 0.33f;
+        float footToeHeight = height * 0.6f;
+        float footPinkyHeight = height * 0.5f;
+
+        float lrOffset = height * 0.08f;
+
+        Vector2 leftHeel = {.x = -heelOffsetX, .y = -heelOffsetY - lrOffset};
+        Vector2 leftPinky = {.x = -heelOffsetX - footWidth, .y = -heelOffsetY - footPinkyHeight - lrOffset};
+        Vector2 leftToe = {.x = -heelOffsetX, .y = -heelOffsetY - footToeHeight - lrOffset};
+
+        float toeSize = height * 0.035f;
+
+        Vector2 leftToe5 = leftPinky;
+        leftToe5.y -= toeSize * 1.2f;
+        Vector2 leftToe1 = leftToe;
+        leftToe1.x -= toeSize;
+        leftToe1.y -= toeSize * 3.2f;
+
+        Vector2 toeVector = Vector2Subtract(leftToe1, leftToe5);
+        Vector2 leftToe4 = Vector2Add(leftToe5, Vector2Scale(toeVector, 0.2f));
+        Vector2 leftToe3 = Vector2Add(leftToe5, Vector2Scale(toeVector, 0.44f));
+        Vector2 leftToe2 = Vector2Add(leftToe5, Vector2Scale(toeVector, 0.69f));
+
+        DrawCircle(leftToe5.x, leftToe5.y, toeSize * 0.7f, obj.color);
+        DrawCircle(leftToe4.x, leftToe4.y, toeSize * 0.9f, obj.color);
+        DrawCircle(leftToe3.x, leftToe3.y, toeSize * 1.1f, obj.color);
+        DrawCircle(leftToe2.x, leftToe2.y, toeSize * 1.2f, obj.color);
+        DrawCircle(leftToe1.x, leftToe1.y, toeSize * 1.6f, obj.color);
+
+        DrawTriangle(leftHeel, leftToe, leftPinky, obj.color);
+
+        leftHeel.x *= -1;
+        leftHeel.y += lrOffset * 2;
+        leftPinky.x *= -1;
+        leftPinky.y += lrOffset * 2;
+        leftToe.x *= -1;
+        leftToe.y += lrOffset * 2;
+
+        DrawTriangle(leftHeel, leftPinky, leftToe, obj.color);
+
+        DrawCircle(-leftToe5.x, leftToe5.y + lrOffset * 2, toeSize * 0.7f, obj.color);
+        DrawCircle(-leftToe4.x, leftToe4.y + lrOffset * 2, toeSize * 0.9f, obj.color);
+        DrawCircle(-leftToe3.x, leftToe3.y + lrOffset * 2, toeSize * 1.1f, obj.color);
+        DrawCircle(-leftToe2.x, leftToe2.y + lrOffset * 2, toeSize * 1.2f, obj.color);
+        DrawCircle(-leftToe1.x, leftToe1.y + lrOffset * 2, toeSize * 1.6f, obj.color);
+
+        break;
+    }
     case DRAW_CLOUD:
     {
 
@@ -838,6 +915,20 @@ void DrawAtRadiusAndAngle(RadialDrawable data)
             points[i].y = center.y + sinf(DEG2RAD * angles[i]) * radiusV;
         }
 
+        rlBegin(RL_TRIANGLES);
+        for (int i = 0; i < segments; i++)
+        {
+            Vector2 pointA = points[i];
+            Vector2 pointB = points[i + 1];
+
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlVertex2f(center.x, center.y);
+            rlVertex2f(pointB.x, pointB.y);
+            rlVertex2f(pointA.x, pointA.y);
+        }
+        rlEnd();
+
+        float lastToAngle;
         for (int i = 0; i < segments; i++)
         {
             Vector2 pointA = points[i];
@@ -857,7 +948,12 @@ void DrawAtRadiusAndAngle(RadialDrawable data)
             }
 
             DrawCircleSector(pointCenter, cloverRadius, fromAngle, toAngle, 10, obj.color);
-            DrawRing(pointCenter, cloverRadius - lineThickness * 0.8f, cloverRadius, fromAngle - 2.0f, toAngle, 10, BLACK);
+            DrawRing(pointCenter, cloverRadius - lineThickness * 0.8f, cloverRadius, fromAngle, toAngle, 10, BLACK);
+            if (i != 0)
+            {
+                DrawRing(pointA, 0, lineThickness * 0.8f, fromAngle - 180, lastToAngle - 180, 10, BLACK);
+            }
+            lastToAngle = toAngle;
         }
 
         if (angleCovered != 360)
@@ -865,19 +961,6 @@ void DrawAtRadiusAndAngle(RadialDrawable data)
             DrawLineEx(points[0], center, lineThickness, BLACK);
             DrawLineEx(center, points[segments], lineThickness, BLACK);
         }
-
-        rlBegin(RL_TRIANGLES);
-        for (int i = 0; i < segments; i++)
-        {
-            Vector2 pointA = points[i];
-            Vector2 pointB = points[i + 1];
-
-            rlColor4ub(color.r, color.g, color.b, color.a);
-            rlVertex2f(center.x, center.y);
-            rlVertex2f(pointB.x, pointB.y);
-            rlVertex2f(pointA.x, pointA.y);
-        }
-        rlEnd();
 
         break;
     }
@@ -898,6 +981,7 @@ void DrawAtRadiusAndAngle(RadialDrawable data)
         DrawLineEx(left, right, lineThickness, lineColor);
         DrawLineEx(right, top, lineThickness, lineColor);
         DrawLineEx(top, left, lineThickness, lineColor);
+
         break;
     }
 
@@ -1317,51 +1401,15 @@ void UpdateDrawFrame(void)
             }
         }
 
-        float playerWidth = 1.2f * pixelsPerUnit;
-        float playerHeight = 2.4f * pixelsPerUnit;
-
-        // Draw floor border
-        DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorBorderThickness, 0, 360, 360, BLACK);
-
-        // Draw floor
-        {
-            floorColor = BEIGE;
-            radiusTill = radiusFrom;
-            radiusFrom = radiusFrom - game.display.pixelsPerUnit * 2.5f;
-            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
-            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
-
-            floorColor = BROWN;
-            radiusTill = radiusFrom;
-            radiusFrom = radiusFrom - game.display.pixelsPerUnit * 3.5f;
-            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
-            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
-
-            floorColor = DARKBROWN;
-            radiusTill = radiusFrom;
-            radiusFrom = radiusFrom - game.display.pixelsPerUnit * 4.5f;
-            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
-            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
-
-            floorColor = DARKGRAY;
-            radiusTill = radiusFrom;
-            radiusFrom = 0;
-            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
-            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
-        }
-
         if (config.editor.showAngleValues)
         {
-            for (int i = 0; i < 360; i += 2)
+            for (int i = 0; i < 360; i += 1)
             {
                 float angleRad = i * DEG2RAD;
-                Vector2 pos = (Vector2){
-                    (floorRadius + 35) * sinf(angleRad),
-                    -(floorRadius + 35) * cosf(angleRad)};
 
-                DrawTextPro(GetFontDefault(), TextFormat("%i", i),
-                            pos, (Vector2){0, 0}, i,
-                            30, 1, DARKGRAY);
+                BeginRadialDraw(floorRadius + 50, angleRad * RAD2DEG);
+                DrawText(TextFormat("%i", i), 0, 0, 40, DARKGRAY);
+                EndRadialDraw();
             }
         }
 
@@ -1464,13 +1512,55 @@ void UpdateDrawFrame(void)
             }
         }
 
-        //Draw everything else
+        // Draw everything behind floor
         for (int i = 0; i < game.drawableCount; i++)
         {
-            if (IsKeyDown(KEY_D)) {
-                TraceLog(LOG_INFO, "Drawing at %f", game.drawables[i].atAngle);
+            if (game.drawables[i].atRadiusOffset >= 0)
+            {
+                DrawAtRadiusAndAngle(game.drawables[i]);
             }
-            DrawAtRadiusAndAngle(game.drawables[i]);
+        }
+
+        float playerWidth = 1.2f * pixelsPerUnit;
+        float playerHeight = 2.4f * pixelsPerUnit;
+
+        // Draw floor border
+        DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorBorderThickness, 0, 360, 360, BLACK);
+
+        // Draw floor
+        {
+            floorColor = BEIGE;
+            radiusTill = radiusFrom;
+            radiusFrom = radiusFrom - game.display.pixelsPerUnit * 2.5f;
+            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
+            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
+
+            floorColor = BROWN;
+            radiusTill = radiusFrom;
+            radiusFrom = radiusFrom - game.display.pixelsPerUnit * 3.5f;
+            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
+            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
+
+            floorColor = DARKBROWN;
+            radiusTill = radiusFrom;
+            radiusFrom = radiusFrom - game.display.pixelsPerUnit * 4.5f;
+            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
+            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
+
+            floorColor = DARKGRAY;
+            radiusTill = radiusFrom;
+            radiusFrom = 0;
+            DrawCircleSector((Vector2){0, 0}, radiusTill, 0, 360, 360, floorColor);
+            DrawRing((Vector2){0, 0}, radiusFrom, radiusFrom + floorSeperatorThickness, 0, 360, 360, BLACK);
+        }
+
+        // Draw everything above floor
+        for (int i = 0; i < game.drawableCount; i++)
+        {
+            if (game.drawables[i].atRadiusOffset < 0)
+            {
+                DrawAtRadiusAndAngle(game.drawables[i]);
+            }
         }
 
         if (game.state == GAME_STATE_STOPPED && !IsKeyDown(KEY_SPACE))
@@ -1502,7 +1592,7 @@ void UpdateDrawFrame(void)
         }
 
         // Draw House
-        if (game.state != GAME_STATE_STOPPED)
+        if (false && game.state != GAME_STATE_STOPPED)
         {
 
             RadialDrawable wall = {
@@ -1590,7 +1680,15 @@ void UpdateDrawFrame(void)
             else
             {
                 if (game.state == GAME_STATE_START)
-                    DrawText(start, round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4, 80 * game.display.lineThicknessFactor, instructionColor);
+                {
+                    DrawTextEx(
+                        emojiFont,
+                        start,
+                        (Vector2){round(-game.display.pixelsPerUnit * 6), round(-floorRadius) - game.display.pixelsPerUnit * 4},
+                        80 * game.display.lineThicknessFactor,
+                        8 * game.display.lineThicknessFactor,
+                        instructionColor);
+                }
             }
             DrawText("Tap to FLIP", round(-game.display.pixelsPerUnit * 8), round(-floorRadius * 1.2f), 160 * game.display.lineThicknessFactor, instructionColor);
             DrawText(wait, round(-game.display.pixelsPerUnit * 16), round(-floorRadius * 1.3f), 180 * game.display.lineThicknessFactor, instructionColor);
@@ -1615,7 +1713,8 @@ void UpdateDrawFrame(void)
         {
             TriggerSharePhoto();
         }
-        if (IsKeyPressed(KEY_C)) {
+        if (IsKeyPressed(KEY_C))
+        {
             int worldSize = game.drawableCount * sizeof(RadialDrawable);
             unsigned char data[worldSize];
             memcpy(data, game.drawables, game.drawableCount * sizeof(RadialDrawable));
@@ -1626,7 +1725,8 @@ void UpdateDrawFrame(void)
             TraceLog(LOG_INFO, "Copied drawables count %d, %zu", game.drawableCount, sizeof(RadialDrawable));
         }
 
-        if (IsKeyPressed(KEY_V)) {
+        if (IsKeyPressed(KEY_V))
+        {
             const char *base64data = GetClipboardText();
             unsigned char *data;
             int dataSize;
@@ -1634,10 +1734,11 @@ void UpdateDrawFrame(void)
             game.drawableCount = dataSize / sizeof(RadialDrawable);
             TraceLog(LOG_INFO, "Read drawables count %d, %zu", game.drawableCount, sizeof(RadialDrawable));
             memcpy(game.drawables, data, game.drawableCount * sizeof(RadialDrawable));
-            for(int i=0; i < game.drawableCount; i++) {
+            for (int i = 0; i < game.drawableCount; i++)
+            {
                 PrecomputeDrawable(&game.drawables[i].drawable);
             }
-            
+
             MemFree((char *)base64data);
             MemFree(data);
         }
@@ -1681,3 +1782,20 @@ void TriggerSharePhoto()
 
 #endif
 }
+
+char *SerializeWorld(Game *game, int *dataSize)
+{
+    int sizeNeeded = 0;
+    for (int i = 0; i < game->drawableCount; i++)
+    {
+        // RadialDrawable rd = game->drawables[i];
+        // rd.atAngle
+        sizeNeeded += 2; //(0-360)
+
+        // rd.atRadiusOffset
+        sizeNeeded += 1; // (-1.)
+    }
+
+    return "fdsasda";
+}
+// void LoadWorld(char* worldData, int dataSize);

@@ -1,15 +1,20 @@
 #Today
+* Use emoji for stuff like footsteps like noto emoji
 * itegrate share into game end flow
     * add button for share or download
 * prepare for level editor
-* bush grass support via drawable
+* serialize world
 
-
+*Ideas for level editor
+ * Tap on preselected spots to render a physical thing like tree or bush or cloud
+ * Tap and drag to decide the size 
+ * resize and delete if the size is too small
 
 #Tomorrow
 * check performance with 
 * render only in vicinity
 * stick man walking
+* integrate emoji ttf
 * world view
     * draw footsteps
 * sun and moon following there own path

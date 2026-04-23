@@ -20,7 +20,7 @@ if [ $? -eq 0 ]; then
     echo "Build Successful: $OUT"
     echo "Running game..."
     echo "---------------------------"
-    gdb ./$OUT
+    ./$OUT
 else
     echo "Build Failed!"
     exit 1
